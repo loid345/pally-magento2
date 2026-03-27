@@ -7,7 +7,6 @@ namespace Pally\Payment\Cron;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\ResourceModel\Order\CollectionFactory as OrderCollectionFactory;
 use Pally\Payment\Gateway\Http\Client\PaymentStatus;
-use Pally\Payment\Model\Order\PaymentStateMachine;
 use Pally\Payment\Model\Ui\ConfigProvider;
 use Pally\Payment\Model\Webhook\Processor;
 use Psr\Log\LoggerInterface;
@@ -56,14 +55,19 @@ class PollPendingPayments
     private function pollOrder(Order $order): void
     {
         $payment = $order->getPayment();
-        $trsId = $payment->getAdditionalInformation('pally_trs_id');
-        $billId = $payment->getAdditionalInformation('bill_id');
+        if ($payment === null) {
+            return;
+        }
+
+        $trsId = (string) $payment->getAdditionalInformation('pally_trs_id');
+        $billId = (string) $payment->getAdditionalInformation('bill_id');
         $storeId = (int) $order->getStoreId();
 
         $pallyStatus = null;
+        $resolvedTrsId = $trsId;
 
         // Prefer payment/status if we have a TrsId
-        if ($trsId) {
+        if ($trsId !== '') {
             try {
                 $response = $this->paymentStatusClient->getPaymentStatus($trsId, $storeId);
                 $pallyStatus = strtoupper((string) ($response['Status'] ?? $response['status'] ?? ''));
@@ -75,12 +79,13 @@ class PollPendingPayments
         }
 
         // Fallback to bill/status
-        if (!$pallyStatus && $billId) {
+        if (!$pallyStatus && $billId !== '') {
             try {
                 $response = $this->paymentStatusClient->getBillStatus($billId, $storeId);
                 $pallyStatus = strtoupper((string) ($response['Status'] ?? $response['status'] ?? ''));
-                if (empty($trsId) && !empty($response['TrsId'])) {
-                    $payment->setAdditionalInformation('pally_trs_id', $response['TrsId']);
+                if ($resolvedTrsId === '' && !empty($response['TrsId'])) {
+                    $resolvedTrsId = (string) $response['TrsId'];
+                    $payment->setAdditionalInformation('pally_trs_id', $resolvedTrsId);
                 }
             } catch (\Exception $e) {
                 $this->logger->debug('Pally cron: bill/status failed', [
@@ -93,18 +98,18 @@ class PollPendingPayments
             return;
         }
 
-        $currentStatus = $payment->getAdditionalInformation('pally_status');
+        $currentStatus = (string) $payment->getAdditionalInformation('pally_status');
         if ($currentStatus === $pallyStatus) {
             return;
         }
 
         // Build webhook-like data and process
         $webhookData = [
-            'InvId' => $billId ?? '',
+            'InvId' => $billId,
             'OutSum' => sprintf('%.2f', (float) $order->getGrandTotal()),
             'custom' => $order->getIncrementId(),
             'Status' => $pallyStatus,
-            'TrsId' => $trsId ?: ($response['TrsId'] ?? ''),
+            'TrsId' => $resolvedTrsId,
         ];
 
         $this->processor->process($webhookData);

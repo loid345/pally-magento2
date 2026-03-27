@@ -16,13 +16,6 @@
         </arguments>
     </virtualType>
 
-    <!-- Transfer Factory -->
-    <type name="Pally\Payment\Gateway\Http\TransferFactory">
-        <arguments>
-            <argument name="config" xsi:type="object">Pally\Payment\Gateway\Config\Config</argument>
-        </arguments>
-    </type>
-
     <!-- HTTP Clients -->
     <type name="Pally\Payment\Gateway\Http\Client\BillCreate">
         <arguments>

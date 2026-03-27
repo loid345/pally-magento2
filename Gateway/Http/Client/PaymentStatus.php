@@ -66,10 +66,21 @@ class PaymentStatus
         ]);
         $this->curl->setTimeout(10);
 
+        if ($this->config->isDebugMode($storeId)) {
+            $this->logger->debug('Pally bill/status request', ['url' => $apiUrl]);
+        }
+
         $this->curl->get($apiUrl);
 
         $status = $this->curl->getStatus();
         $body = $this->curl->getBody();
+
+        if ($this->config->isDebugMode($storeId)) {
+            $this->logger->debug('Pally bill/status response', [
+                'http_status' => $status,
+                'body' => $body,
+            ]);
+        }
 
         if ($status < 200 || $status >= 300) {
             $this->logger->error('Pally bill/status failed', [

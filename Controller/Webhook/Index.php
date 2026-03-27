@@ -10,6 +10,7 @@ use Magento\Framework\App\Request\InvalidRequestException;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Controller\ResultInterface;
+use Magento\Sales\Model\ResourceModel\Order\CollectionFactory as OrderCollectionFactory;
 use Pally\Payment\Model\Webhook\Processor;
 use Pally\Payment\Model\Webhook\SignatureVerifier;
 use Psr\Log\LoggerInterface;
@@ -21,6 +22,7 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
         private readonly JsonFactory $resultJsonFactory,
         private readonly SignatureVerifier $signatureVerifier,
         private readonly Processor $processor,
+        private readonly OrderCollectionFactory $orderCollectionFactory,
         private readonly LoggerInterface $logger
     ) {
     }
@@ -43,7 +45,10 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
             return $result->setHttpResponseCode(400)->setData(['ok' => false, 'error' => 'bad_request']);
         }
 
-        if (!$this->signatureVerifier->isValid($outSum, $invId, $signatureValue)) {
+        // Resolve storeId from order to use correct API token for signature verification
+        $storeId = $this->resolveStoreId($custom, $invId);
+
+        if (!$this->signatureVerifier->isValid($outSum, $invId, $signatureValue, $storeId)) {
             $this->logger->error('Pally webhook: invalid signature', [
                 'InvId' => $invId,
                 'custom' => $custom,
@@ -73,6 +78,36 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
         }
 
         return $result->setHttpResponseCode(200)->setData(['ok' => true]);
+    }
+
+    private function resolveStoreId(string $custom, string $invId): ?int
+    {
+        if ($custom !== '') {
+            $collection = $this->orderCollectionFactory->create();
+            $collection->addFieldToFilter('increment_id', $custom);
+            $collection->setPageSize(1);
+            $order = $collection->getFirstItem();
+            if ($order && $order->getId()) {
+                return (int) $order->getStoreId();
+            }
+        }
+
+        if ($invId !== '') {
+            $collection = $this->orderCollectionFactory->create();
+            $collection->join(
+                ['sop' => 'sales_order_payment'],
+                'main_table.entity_id = sop.parent_id',
+                []
+            );
+            $collection->addFieldToFilter('sop.additional_information', ['like' => '%' . $invId . '%']);
+            $collection->setPageSize(1);
+            $order = $collection->getFirstItem();
+            if ($order && $order->getId()) {
+                return (int) $order->getStoreId();
+            }
+        }
+
+        return null;
     }
 
     public function createCsrfValidationException(RequestInterface $request): ?InvalidRequestException

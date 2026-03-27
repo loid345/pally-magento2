@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Pally\Payment\Gateway\Http\Client;
 
 use Magento\Framework\HTTP\Client\Curl;
+use Magento\Payment\Gateway\Http\ClientException;
 use Magento\Payment\Gateway\Http\ClientInterface;
 use Magento\Payment\Gateway\Http\TransferInterface;
 use Pally\Payment\Gateway\Config\Config;
@@ -58,8 +59,8 @@ class BillCreate implements ClientInterface
                 'http_status' => $status,
                 'response' => $responseBody,
             ]);
-            throw new \RuntimeException(
-                __('Payment service temporarily unavailable. Please try again later.')->render()
+            throw new \Magento\Payment\Gateway\Http\ClientException(
+                __('Payment service temporarily unavailable. Please try again later.')
             );
         }
 
