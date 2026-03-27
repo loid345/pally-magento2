@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Pally\Payment\Gateway\Config;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Store\Model\ScopeInterface;
 
 class Config
@@ -12,7 +13,8 @@ class Config
     private const XML_PATH_PREFIX = 'payment/pally/';
 
     public function __construct(
-        private readonly ScopeConfigInterface $scopeConfig
+        private readonly ScopeConfigInterface $scopeConfig,
+        private readonly EncryptorInterface $encryptor
     ) {
     }
 
@@ -54,11 +56,17 @@ class Config
 
     public function getApiToken(?int $storeId = null): string
     {
-        return (string) $this->scopeConfig->getValue(
+        $value = (string) $this->scopeConfig->getValue(
             self::XML_PATH_PREFIX . 'api_token',
             ScopeInterface::SCOPE_STORE,
             $storeId
         );
+
+        if ($value === '') {
+            return '';
+        }
+
+        return (string) $this->encryptor->decrypt($value);
     }
 
     public function getShopId(?int $storeId = null): string
