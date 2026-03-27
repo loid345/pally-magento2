@@ -45,7 +45,12 @@ class PaymentStateMachine
     {
         return in_array(
             strtoupper($pallyStatus),
-            [self::PALLY_STATUS_SUCCESS, self::PALLY_STATUS_FAIL, self::PALLY_STATUS_UNDERPAID, self::PALLY_STATUS_OVERPAID],
+            [
+                self::PALLY_STATUS_SUCCESS,
+                self::PALLY_STATUS_FAIL,
+                self::PALLY_STATUS_UNDERPAID,
+                self::PALLY_STATUS_OVERPAID,
+            ],
             true
         );
     }
