@@ -69,7 +69,9 @@ jobs:
           php-version: ${{ matrix.php }}
           tools: composer
       - name: Install PHPStan
-        run: composer global require phpstan/phpstan phpstan/extension-installer
+        run: |
+          composer global config --no-plugins allow-plugins.phpstan/extension-installer true
+          composer global require phpstan/phpstan phpstan/extension-installer
       - name: Run PHPStan
         run: |
           PHPSTAN_BIN="$(composer global config home)/vendor/bin/phpstan"
