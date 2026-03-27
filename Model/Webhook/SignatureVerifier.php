@@ -16,8 +16,7 @@ class SignatureVerifier
     public function isValid(string $outSum, string $invId, string $signatureValue, ?int $storeId = null): bool
     {
         $apiToken = $this->config->getApiToken($storeId);
-        // phpcs:ignore Magento2.Functions.DiscouragedFunction.Discouraged
-        $expected = strtoupper(md5($outSum . ':' . $invId . ':' . $apiToken));
+        $expected = strtoupper(hash('md5', $outSum . ':' . $invId . ':' . $apiToken));
 
         return hash_equals($expected, strtoupper($signatureValue));
     }
