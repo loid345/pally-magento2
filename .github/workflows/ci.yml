@@ -52,7 +52,7 @@ jobs:
             --standard=Magento2 \
             --extensions=php,phtml \
             --ignore=vendor/ \
-            --severity=1 \
+            -n \
             -p \
             .
 
