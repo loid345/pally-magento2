@@ -1,0 +1,398 @@
+name: CI
+
+on:
+  push:
+    branches: ['*']
+  pull_request:
+    branches: ['*']
+
+jobs:
+  composer-validate:
+    name: Composer Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate composer.json
+        run: composer validate --strict --no-check-lock
+
+  php-syntax:
+    name: PHP Syntax Check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+      - name: Check PHP syntax
+        run: find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l
+
+  phpcs:
+    name: PHP CodeSniffer (Magento Standards)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+      - name: Install dependencies
+        run: |
+          composer global config allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
+          composer global require squizlabs/php_codesniffer magento/magento-coding-standard
+      - name: Run PHPCS with Magento2 standard
+        run: |
+          ~/.composer/vendor/bin/phpcs \
+            --standard=Magento2 \
+            --extensions=php,phtml \
+            --ignore=vendor/ \
+            --severity=1 \
+            -p \
+            .
+
+  phpstan:
+    name: PHPStan Static Analysis
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer
+      - name: Install PHPStan
+        run: composer global require phpstan/phpstan phpstan/extension-installer
+      - name: Run PHPStan
+        run: ~/.composer/vendor/bin/phpstan analyse -c phpstan.neon --no-progress --error-format=github
+
+  phpmd:
+    name: PHP Mess Detector
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: phpmd
+      - name: Run PHPMD
+        run: phpmd . github phpmd-ruleset.xml --exclude vendor/
+
+  xml-validation:
+    name: XML Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install xmllint
+        run: sudo apt-get install -y libxml2-utils
+      - name: Validate XML files are well-formed
+        run: |
+          find . -name '*.xml' -not -path './vendor/*' -print0 | while IFS= read -r -d '' file; do
+            echo "Validating: $file"
+            xmllint --noout "$file" || exit 1
+          done
+
+  js-lint:
+    name: JavaScript Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Create ESLint config
+        run: |
+          cat > .eslintrc.json <<'JSON'
+          {
+            "env": {
+              "browser": true,
+              "amd": true
+            },
+            "globals": {
+              "define": "readonly",
+              "require": "readonly"
+            },
+            "rules": {
+              "no-undef": "error",
+              "no-unused-vars": "warn",
+              "no-redeclare": "error",
+              "eqeqeq": "warn",
+              "no-eval": "error",
+              "no-implied-eval": "error",
+              "no-new-func": "error",
+              "no-script-url": "error",
+              "strict": ["error", "function"]
+            },
+            "parserOptions": {
+              "ecmaVersion": 2020,
+              "sourceType": "module"
+            }
+          }
+          JSON
+      - name: Install ESLint
+        run: npm install --no-save eslint@8
+      - name: Run ESLint
+        run: npx eslint 'view/**/*.js' --no-eslintrc -c .eslintrc.json
+
+  security-check:
+    name: Security Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+      - name: Check for hardcoded secrets
+        run: |
+          echo "Checking for potential hardcoded secrets..."
+          ISSUES=0
+
+          # Check for hardcoded API tokens/keys
+          if grep -rn --include='*.php' --include='*.xml' --include='*.js' \
+            -E '(Bearer\s+[A-Za-z0-9]{20,}|api[_-]?(key|token|secret)\s*=\s*["\x27][A-Za-z0-9]{10,})' \
+            --exclude-dir=vendor . ; then
+            echo "::warning::Potential hardcoded secrets found"
+            ISSUES=$((ISSUES+1))
+          fi
+
+          # Check for MD5 usage outside SignatureVerifier (Pally requires MD5 for signatures)
+          MD5_FILES=$(grep -rln --include='*.php' 'md5(' --exclude-dir=vendor . | grep -v SignatureVerifier.php || true)
+          if [ -n "$MD5_FILES" ]; then
+            echo "::warning::MD5 usage found outside SignatureVerifier: $MD5_FILES"
+            ISSUES=$((ISSUES+1))
+          fi
+
+          # Check for eval/exec usage
+          if grep -rn --include='*.php' -E '\b(eval|exec|system|passthru|shell_exec|popen|proc_open)\s*\(' \
+            --exclude-dir=vendor . ; then
+            echo "::error::Dangerous function usage found"
+            exit 1
+          fi
+
+          # Check for SQL injection patterns
+          if grep -rn --include='*.php' -E '\$_(GET|POST|REQUEST|SERVER)\[' --exclude-dir=vendor . ; then
+            echo "::error::Direct superglobal access found — use RequestInterface instead"
+            exit 1
+          fi
+
+          echo "Security checks completed with $ISSUES warnings"
+
+      - name: Check CSRF protection
+        run: |
+          echo "Checking webhook CSRF exemption..."
+          # Verify webhook controller implements CsrfAwareActionInterface
+          if ! grep -q 'CsrfAwareActionInterface' Controller/Webhook/Index.php; then
+            echo "::error::Webhook controller must implement CsrfAwareActionInterface"
+            exit 1
+          fi
+          # Verify signature verification is used
+          if ! grep -q 'SignatureVerifier' Controller/Webhook/Index.php; then
+            echo "::error::Webhook controller must use SignatureVerifier"
+            exit 1
+          fi
+          # Verify hash_equals is used for timing-safe comparison
+          if ! grep -q 'hash_equals' Model/Webhook/SignatureVerifier.php; then
+            echo "::error::SignatureVerifier must use hash_equals for timing-safe comparison"
+            exit 1
+          fi
+          echo "CSRF and signature checks passed"
+
+  php-compatibility:
+    name: PHP Compatibility Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+      - name: Install PHPCompatibility
+        run: |
+          composer global config allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
+          composer global require phpcompatibility/php-compatibility squizlabs/php_codesniffer
+      - name: Run PHP Compatibility check for 8.3+
+        run: |
+          ~/.composer/vendor/bin/phpcs \
+            --standard=PHPCompatibility \
+            --runtime-set testVersion 8.3- \
+            --extensions=php \
+            --ignore=vendor/ \
+            -p \
+            .
+
+  i18n-check:
+    name: Translation Completeness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check translation files exist
+        run: |
+          for locale in en_US ru_RU; do
+            if [ ! -f "i18n/${locale}.csv" ]; then
+              echo "::error::Missing translation file: i18n/${locale}.csv"
+              exit 1
+            fi
+          done
+      - name: Check translation completeness
+        run: |
+          EN_COUNT=$(wc -l < i18n/en_US.csv)
+          RU_COUNT=$(wc -l < i18n/ru_RU.csv)
+          echo "EN strings: $EN_COUNT, RU strings: $RU_COUNT"
+          if [ "$EN_COUNT" -ne "$RU_COUNT" ]; then
+            echo "::error::Translation files have different number of strings (EN: $EN_COUNT, RU: $RU_COUNT)"
+            exit 1
+          fi
+
+          # Check for empty translations
+          if grep -nP '^"[^"]+",""$' i18n/ru_RU.csv; then
+            echo "::error::Empty translations found in ru_RU.csv"
+            exit 1
+          fi
+          if grep -nP '^"[^"]+",""$' i18n/en_US.csv; then
+            echo "::error::Empty translations found in en_US.csv"
+            exit 1
+          fi
+          echo "Translation checks passed"
+
+      - name: Check for untranslated PHP strings
+        run: |
+          echo "Checking for __() calls with translatable strings..."
+          # Extract translatable strings from PHP files
+          grep -roh --include='*.php' "__('[^']*')" . --exclude-dir=vendor | \
+            sed "s/__('//;s/')//" | sort -u > /tmp/php_strings.txt
+
+          echo "Found $(wc -l < /tmp/php_strings.txt) translatable strings in PHP files"
+
+          # Check each string exists in EN translation
+          MISSING=0
+          while IFS= read -r str; do
+            if ! grep -qF "\"$str\"" i18n/en_US.csv 2>/dev/null; then
+              echo "::warning::String not in en_US.csv: $str"
+              MISSING=$((MISSING+1))
+            fi
+          done < /tmp/php_strings.txt
+
+          if [ "$MISSING" -gt 0 ]; then
+            echo "::warning::$MISSING strings may be missing from translation files"
+          fi
+          echo "Translation string check completed"
+
+  magento-xml-structure:
+    name: Magento XML Structure Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check required module files exist
+        run: |
+          REQUIRED_FILES=(
+            "registration.php"
+            "composer.json"
+            "etc/module.xml"
+            "etc/config.xml"
+            "etc/di.xml"
+            "etc/acl.xml"
+            "etc/adminhtml/system.xml"
+            "etc/frontend/di.xml"
+            "etc/frontend/routes.xml"
+          )
+          for f in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Required file missing: $f"
+              exit 1
+            fi
+          done
+          echo "All required module files present"
+
+      - name: Validate module.xml structure
+        run: |
+          # Check module name
+          if ! grep -q 'name="Pally_Payment"' etc/module.xml; then
+            echo "::error::module.xml must declare module name Pally_Payment"
+            exit 1
+          fi
+          echo "module.xml structure OK"
+
+      - name: Validate di.xml references
+        run: |
+          echo "Checking DI references..."
+          # Extract class references from di.xml and verify files exist
+          ERRORS=0
+          for class in $(grep -oP 'Pally\\Payment\\[A-Za-z\\]+' etc/di.xml | sort -u); do
+            filepath=$(echo "$class" | sed 's|Pally\\Payment\\||;s|\\|/|g').php
+            if [ ! -f "$filepath" ]; then
+              echo "::error::Class referenced in di.xml not found: $class (expected at $filepath)"
+              ERRORS=$((ERRORS+1))
+            fi
+          done
+          if [ "$ERRORS" -gt 0 ]; then
+            exit 1
+          fi
+          echo "DI references check passed"
+
+      - name: Validate config.xml payment method code
+        run: |
+          if ! grep -q '<pally>' etc/config.xml; then
+            echo "::error::config.xml must define <pally> payment method"
+            exit 1
+          fi
+          if ! grep -q 'PallyPaymentFacade' etc/config.xml; then
+            echo "::error::config.xml must reference PallyPaymentFacade model"
+            exit 1
+          fi
+          echo "config.xml structure OK"
+
+  coding-conventions:
+    name: Coding Conventions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check strict types declaration
+        run: |
+          ERRORS=0
+          for f in $(find . -name '*.php' -not -path './vendor/*'); do
+            if ! head -5 "$f" | grep -q 'declare(strict_types=1)'; then
+              echo "::error file=$f::Missing declare(strict_types=1)"
+              ERRORS=$((ERRORS+1))
+            fi
+          done
+          if [ "$ERRORS" -gt 0 ]; then
+            exit 1
+          fi
+          echo "All PHP files have strict_types declaration"
+
+      - name: Check namespace declarations
+        run: |
+          ERRORS=0
+          for f in $(find . -name '*.php' -not -path './vendor/*' -not -name 'registration.php'); do
+            if ! grep -q '^namespace Pally\\Payment' "$f"; then
+              echo "::error file=$f::Missing or incorrect namespace"
+              ERRORS=$((ERRORS+1))
+            fi
+          done
+          if [ "$ERRORS" -gt 0 ]; then
+            exit 1
+          fi
+          echo "All PHP files have correct namespace"
+
+      - name: Check for TODO/FIXME/HACK markers
+        run: |
+          FOUND=$(grep -rn --include='*.php' --include='*.js' --include='*.xml' \
+            -E '\b(TODO|FIXME|HACK|XXX|TEMP)\b' --exclude-dir=vendor . || true)
+          if [ -n "$FOUND" ]; then
+            echo "$FOUND"
+            echo "::warning::Found TODO/FIXME markers in code"
+          fi
+          echo "Marker check completed"
+
+      - name: Check file permissions
+        run: |
+          EXECUTABLE=$(find . -name '*.php' -not -path './vendor/*' -executable)
+          if [ -n "$EXECUTABLE" ]; then
+            echo "::error::PHP files should not be executable: $EXECUTABLE"
+            exit 1
+          fi
+          echo "File permissions OK"

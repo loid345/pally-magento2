@@ -1,0 +1,9 @@
+parameters:
+  level: 6
+  paths:
+    - .
+  excludePaths:
+    - vendor
+  ignoreErrors:
+    - '#Call to an undefined method Magento\\Framework\\App\\RequestInterface::#'
+    - '#Call to an undefined method Magento\\Sales\\Model\\ResourceModel\\Order\\Collection::join\(\)#'
