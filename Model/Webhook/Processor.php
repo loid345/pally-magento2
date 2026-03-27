@@ -39,6 +39,13 @@ class Processor
         }
 
         $payment = $order->getPayment();
+        if ($payment === null) {
+            $this->logger->warning('Pally webhook: order has no payment entity', [
+                'order' => $order->getIncrementId(),
+            ]);
+            return;
+        }
+
         if ($this->isDuplicateFinalEvent($order, $payment, $trsId)) {
             return;
         }
