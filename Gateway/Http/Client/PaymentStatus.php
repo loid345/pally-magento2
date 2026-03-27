@@ -1,0 +1,84 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Pally\Payment\Gateway\Http\Client;
+
+use Magento\Framework\HTTP\Client\Curl;
+use Pally\Payment\Gateway\Config\Config;
+use Psr\Log\LoggerInterface;
+
+class PaymentStatus
+{
+    public function __construct(
+        private readonly Curl $curl,
+        private readonly Config $config,
+        private readonly LoggerInterface $logger
+    ) {
+    }
+
+    public function getPaymentStatus(string $paymentId, ?int $storeId = null): array
+    {
+        $apiUrl = $this->config->getApiUrl($storeId)
+            . '/api/v1/payment/status?id=' . rawurlencode($paymentId);
+        $apiToken = $this->config->getApiToken($storeId);
+
+        $this->curl->setHeaders([
+            'Authorization' => 'Bearer ' . $apiToken,
+        ]);
+        $this->curl->setTimeout(10);
+
+        if ($this->config->isDebugMode($storeId)) {
+            $this->logger->debug('Pally payment/status request', ['url' => $apiUrl]);
+        }
+
+        $this->curl->get($apiUrl);
+
+        $status = $this->curl->getStatus();
+        $body = $this->curl->getBody();
+
+        if ($this->config->isDebugMode($storeId)) {
+            $this->logger->debug('Pally payment/status response', [
+                'http_status' => $status,
+                'body' => $body,
+            ]);
+        }
+
+        if ($status < 200 || $status >= 300) {
+            $this->logger->error('Pally payment/status failed', [
+                'http_status' => $status,
+                'response' => $body,
+            ]);
+            throw new \RuntimeException('Pally payment/status failed with HTTP ' . $status);
+        }
+
+        return json_decode($body, true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    public function getBillStatus(string $billId, ?int $storeId = null): array
+    {
+        $apiUrl = $this->config->getApiUrl($storeId)
+            . '/api/v1/bill/status?id=' . rawurlencode($billId);
+        $apiToken = $this->config->getApiToken($storeId);
+
+        $this->curl->setHeaders([
+            'Authorization' => 'Bearer ' . $apiToken,
+        ]);
+        $this->curl->setTimeout(10);
+
+        $this->curl->get($apiUrl);
+
+        $status = $this->curl->getStatus();
+        $body = $this->curl->getBody();
+
+        if ($status < 200 || $status >= 300) {
+            $this->logger->error('Pally bill/status failed', [
+                'http_status' => $status,
+                'response' => $body,
+            ]);
+            throw new \RuntimeException('Pally bill/status failed with HTTP ' . $status);
+        }
+
+        return json_decode($body, true, 512, JSON_THROW_ON_ERROR);
+    }
+}

@@ -1,0 +1,82 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Config:etc/system_file.xsd">
+    <system>
+        <section id="payment">
+            <group id="pally" translate="label comment" type="text" sortOrder="50" showInDefault="1"
+                   showInWebsite="1" showInStore="1">
+                <label>Pally Payment</label>
+                <comment><![CDATA[Accept payments via <a href="https://pally.info" target="_blank">Pally</a> payment service.]]></comment>
+                <field id="active" translate="label" type="select" sortOrder="10"
+                       showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Enabled</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/pally/active</config_path>
+                </field>
+                <field id="title" translate="label comment" type="text" sortOrder="20"
+                       showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Title</label>
+                    <comment>Payment method title displayed at checkout.</comment>
+                    <config_path>payment/pally/title</config_path>
+                </field>
+                <field id="description" translate="label comment" type="textarea" sortOrder="25"
+                       showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Description</label>
+                    <comment>Description displayed at checkout under the payment method title.</comment>
+                    <config_path>payment/pally/description</config_path>
+                </field>
+                <field id="instructions" translate="label comment" type="textarea" sortOrder="27"
+                       showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Instructions</label>
+                    <comment>Additional instructions shown to customer after selecting this method.</comment>
+                    <config_path>payment/pally/instructions</config_path>
+                </field>
+                <field id="sort_order" translate="label" type="text" sortOrder="30"
+                       showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Sort Order</label>
+                    <config_path>payment/pally/sort_order</config_path>
+                    <frontend_class>validate-number</frontend_class>
+                </field>
+                <field id="api_token" translate="label comment" type="obscure" sortOrder="40"
+                       showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>API Token</label>
+                    <comment>Bearer token for Pally API authentication.</comment>
+                    <config_path>payment/pally/api_token</config_path>
+                    <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
+                </field>
+                <field id="shop_id" translate="label comment" type="text" sortOrder="50"
+                       showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Shop ID</label>
+                    <comment>Your Pally Shop ID.</comment>
+                    <config_path>payment/pally/shop_id</config_path>
+                </field>
+                <field id="api_url" translate="label comment" type="text" sortOrder="55"
+                       showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>API URL</label>
+                    <comment>Pally API base URL. Default: https://pal24.pro</comment>
+                    <config_path>payment/pally/api_url</config_path>
+                </field>
+                <field id="bill_type" translate="label comment" type="select" sortOrder="60"
+                       showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Bill Type</label>
+                    <comment>Type of bill to create.</comment>
+                    <config_path>payment/pally/bill_type</config_path>
+                    <source_model>Pally\Payment\Model\Config\Source\BillType</source_model>
+                </field>
+                <field id="lifetime" translate="label comment" type="text" sortOrder="70"
+                       showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Bill Lifetime (seconds)</label>
+                    <comment>Time in seconds before the bill expires. Default: 1800 (30 minutes).</comment>
+                    <config_path>payment/pally/lifetime</config_path>
+                    <frontend_class>validate-number</frontend_class>
+                </field>
+                <field id="debug" translate="label" type="select" sortOrder="80"
+                       showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Debug Mode</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/pally/debug</config_path>
+                </field>
+            </group>
+        </section>
+    </system>
+</config>

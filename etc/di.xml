@@ -1,0 +1,101 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+
+    <!-- Logger -->
+    <virtualType name="PallyPaymentLoggerHandler" type="Magento\Framework\Logger\Handler\Base">
+        <arguments>
+            <argument name="fileName" xsi:type="string">/var/log/pally.log</argument>
+        </arguments>
+    </virtualType>
+    <virtualType name="PallyPaymentLogger" type="Magento\Framework\Logger\Monolog">
+        <arguments>
+            <argument name="handlers" xsi:type="array">
+                <item name="debug" xsi:type="object">PallyPaymentLoggerHandler</item>
+            </argument>
+        </arguments>
+    </virtualType>
+
+    <!-- Transfer Factory -->
+    <type name="Pally\Payment\Gateway\Http\TransferFactory">
+        <arguments>
+            <argument name="config" xsi:type="object">Pally\Payment\Gateway\Config\Config</argument>
+        </arguments>
+    </type>
+
+    <!-- HTTP Clients -->
+    <type name="Pally\Payment\Gateway\Http\Client\BillCreate">
+        <arguments>
+            <argument name="logger" xsi:type="object">PallyPaymentLogger</argument>
+        </arguments>
+    </type>
+    <type name="Pally\Payment\Gateway\Http\Client\PaymentStatus">
+        <arguments>
+            <argument name="logger" xsi:type="object">PallyPaymentLogger</argument>
+        </arguments>
+    </type>
+
+    <!-- Authorize Command -->
+    <virtualType name="PallyPaymentAuthorizeCommand" type="Magento\Payment\Gateway\Command\GatewayCommand">
+        <arguments>
+            <argument name="requestBuilder" xsi:type="object">Pally\Payment\Gateway\Request\BillCreateDataBuilder</argument>
+            <argument name="transferFactory" xsi:type="object">Pally\Payment\Gateway\Http\TransferFactory</argument>
+            <argument name="client" xsi:type="object">Pally\Payment\Gateway\Http\Client\BillCreate</argument>
+            <argument name="handler" xsi:type="object">Pally\Payment\Gateway\Response\BillCreateHandler</argument>
+            <argument name="validator" xsi:type="object">Pally\Payment\Gateway\Validator\BillCreateValidator</argument>
+        </arguments>
+    </virtualType>
+
+    <!-- Command Pool -->
+    <virtualType name="PallyPaymentCommandPool" type="Magento\Payment\Gateway\Command\CommandPool">
+        <arguments>
+            <argument name="commands" xsi:type="array">
+                <item name="authorize" xsi:type="string">PallyPaymentAuthorizeCommand</item>
+            </argument>
+        </arguments>
+    </virtualType>
+
+    <!-- Value Handler -->
+    <virtualType name="PallyPaymentValueHandler" type="Magento\Payment\Gateway\Config\ConfigValueHandler">
+        <arguments>
+            <argument name="configInterface" xsi:type="object">PallyPaymentGatewayConfig</argument>
+        </arguments>
+    </virtualType>
+    <virtualType name="PallyPaymentGatewayConfig" type="Magento\Payment\Gateway\Config\Config">
+        <arguments>
+            <argument name="methodCode" xsi:type="const">Pally\Payment\Model\Ui\ConfigProvider::CODE</argument>
+        </arguments>
+    </virtualType>
+    <virtualType name="PallyPaymentValueHandlerPool" type="Magento\Payment\Gateway\Config\ValueHandlerPool">
+        <arguments>
+            <argument name="handlers" xsi:type="array">
+                <item name="default" xsi:type="string">PallyPaymentValueHandler</item>
+            </argument>
+        </arguments>
+    </virtualType>
+
+    <!-- Payment Method Facade -->
+    <virtualType name="PallyPaymentFacade" type="Magento\Payment\Model\Method\Adapter">
+        <arguments>
+            <argument name="code" xsi:type="const">Pally\Payment\Model\Ui\ConfigProvider::CODE</argument>
+            <argument name="formBlockType" xsi:type="string">Magento\Payment\Block\Form</argument>
+            <argument name="infoBlockType" xsi:type="string">Magento\Payment\Block\Info</argument>
+            <argument name="valueHandlerPool" xsi:type="object">PallyPaymentValueHandlerPool</argument>
+            <argument name="commandPool" xsi:type="object">PallyPaymentCommandPool</argument>
+        </arguments>
+    </virtualType>
+
+    <!-- Webhook Processor -->
+    <type name="Pally\Payment\Model\Webhook\Processor">
+        <arguments>
+            <argument name="logger" xsi:type="object">PallyPaymentLogger</argument>
+        </arguments>
+    </type>
+
+    <!-- Cron -->
+    <type name="Pally\Payment\Cron\PollPendingPayments">
+        <arguments>
+            <argument name="logger" xsi:type="object">PallyPaymentLogger</argument>
+        </arguments>
+    </type>
+</config>
