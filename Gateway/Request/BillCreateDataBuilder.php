@@ -29,13 +29,15 @@ class BillCreateDataBuilder implements BuilderInterface
         return [
             '__store_id' => $storeId,
             'shop_id' => $this->config->getShopId($storeId),
+            'order_id' => $order->getOrderIncrementId(),
             'amount' => sprintf('%.2f', (float) $order->getGrandTotalAmount()),
             'type' => $this->config->getBillType($storeId),
             'lifetime' => (string) $this->config->getLifetime($storeId),
             'custom' => $order->getOrderIncrementId(),
+            'description' => __('Order #%1', $order->getOrderIncrementId())->render(),
+            'payer_pays_commission' => '0',
             'success_url' => $baseUrl . '/pally/return/success',
             'fail_url' => $baseUrl . '/pally/return/fail',
-            'shop_url' => $baseUrl . '/',
         ];
     }
 }

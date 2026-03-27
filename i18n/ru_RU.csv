@@ -33,3 +33,5 @@
 "Pally payment status: %1","Статус оплаты Pally: %1"
 "Pally payment confirmed. Transaction ID: %1","Оплата Pally подтверждена. ID транзакции: %1"
 "Payment failed via Pally. Order cancelled.","Оплата через Pally не удалась. Заказ отменён."
+"Pally: payment underpaid. Order placed on hold for manual review.","Pally: недоплата. Заказ поставлен на удержание для ручной проверки."
+"Order #%1","Заказ #%1"

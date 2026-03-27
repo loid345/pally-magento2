@@ -33,6 +33,10 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
         $outSum = (string) $this->request->getParam('OutSum', '');
         $signatureValue = (string) $this->request->getParam('SignatureValue', '');
         $custom = (string) $this->request->getParam('custom', '');
+        $trsId = (string) $this->request->getParam('TrsId', '');
+        $status = (string) $this->request->getParam('Status', '');
+        $accountType = (string) $this->request->getParam('AccountType', '');
+        $commission = (string) $this->request->getParam('Commission', '');
 
         if ($invId === '' || $outSum === '' || $signatureValue === '') {
             $this->logger->warning('Pally webhook: missing required parameters');
@@ -47,17 +51,14 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
             return $result->setHttpResponseCode(401)->setData(['ok' => false, 'error' => 'invalid_signature']);
         }
 
-        $paymentData = [];
-        $paymentParams = $this->request->getParam('Payment', []);
-        if (is_array($paymentParams)) {
-            $paymentData = $paymentParams;
-        }
-
         $webhookData = [
             'InvId' => $invId,
             'OutSum' => $outSum,
             'custom' => $custom,
-            'Payment' => $paymentData,
+            'TrsId' => $trsId,
+            'Status' => $status,
+            'AccountType' => $accountType,
+            'Commission' => $commission,
         ];
 
         try {

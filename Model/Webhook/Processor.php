@@ -29,9 +29,8 @@ class Processor
     {
         $custom = $webhookData['custom'] ?? '';
         $invId = $webhookData['InvId'] ?? '';
-        $paymentData = $webhookData['Payment'] ?? [];
-        $pallyStatus = strtoupper((string) ($paymentData['Status'] ?? ''));
-        $trsId = (string) ($paymentData['TrsId'] ?? '');
+        $pallyStatus = strtoupper((string) ($webhookData['Status'] ?? ''));
+        $trsId = (string) ($webhookData['TrsId'] ?? '');
 
         $order = $this->findOrder($custom, $invId);
         if (!$order) {
@@ -69,19 +68,26 @@ class Processor
         if ($trsId) {
             $payment->setAdditionalInformation('pally_trs_id', $trsId);
         }
-        if (!empty($paymentData['AccountType'])) {
-            $payment->setAdditionalInformation('pally_account_type', $paymentData['AccountType']);
+        if (!empty($webhookData['AccountType'])) {
+            $payment->setAdditionalInformation('pally_account_type', $webhookData['AccountType']);
         }
-        if (!empty($paymentData['OutSum'])) {
-            $payment->setAdditionalInformation('pally_out_sum', $paymentData['OutSum']);
+        if (!empty($webhookData['OutSum'])) {
+            $payment->setAdditionalInformation('pally_out_sum', $webhookData['OutSum']);
+        }
+        if (!empty($webhookData['Commission'])) {
+            $payment->setAdditionalInformation('pally_commission', $webhookData['Commission']);
         }
 
         $stateInfo = $this->stateMachine->getMagentoState($pallyStatus);
 
-        if ($pallyStatus === PaymentStateMachine::PALLY_STATUS_SUCCESS) {
+        if ($pallyStatus === PaymentStateMachine::PALLY_STATUS_SUCCESS
+            || $pallyStatus === PaymentStateMachine::PALLY_STATUS_OVERPAID
+        ) {
             $this->handleSuccess($order, $trsId);
         } elseif ($pallyStatus === PaymentStateMachine::PALLY_STATUS_FAIL) {
             $this->handleFail($order);
+        } elseif ($pallyStatus === PaymentStateMachine::PALLY_STATUS_UNDERPAID) {
+            $this->handleUnderpaid($order);
         } else {
             $order->setState($stateInfo['state']);
             $order->setStatus($stateInfo['status']);
@@ -126,6 +132,17 @@ class Processor
         $this->transaction->addObject($invoice);
         $this->transaction->addObject($order);
         $this->transaction->save();
+    }
+
+    private function handleUnderpaid(Order $order): void
+    {
+        if ($order->canHold()) {
+            $order->hold();
+            $order->addCommentToStatusHistory(
+                __('Pally: payment underpaid. Order placed on hold for manual review.')->render()
+            );
+            $this->orderRepository->save($order);
+        }
     }
 
     private function handleFail(Order $order): void

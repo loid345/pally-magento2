@@ -33,3 +33,5 @@
 "Pally payment status: %1","Pally payment status: %1"
 "Pally payment confirmed. Transaction ID: %1","Pally payment confirmed. Transaction ID: %1"
 "Payment failed via Pally. Order cancelled.","Payment failed via Pally. Order cancelled."
+"Pally: payment underpaid. Order placed on hold for manual review.","Pally: payment underpaid. Order placed on hold for manual review."
+"Order #%1","Order #%1"

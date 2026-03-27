@@ -103,10 +103,8 @@ class PollPendingPayments
             'InvId' => $billId ?? '',
             'OutSum' => sprintf('%.2f', (float) $order->getGrandTotal()),
             'custom' => $order->getIncrementId(),
-            'Payment' => [
-                'Status' => $pallyStatus,
-                'TrsId' => $trsId ?: ($response['TrsId'] ?? ''),
-            ],
+            'Status' => $pallyStatus,
+            'TrsId' => $trsId ?: ($response['TrsId'] ?? ''),
         ];
 
         $this->processor->process($webhookData);
