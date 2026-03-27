@@ -8,6 +8,7 @@ use Magento\Framework\DB\Transaction;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
+use Magento\Sales\Model\Order\Payment;
 use Magento\Sales\Model\ResourceModel\Order\CollectionFactory as OrderCollectionFactory;
 use Magento\Sales\Model\Service\InvoiceService;
 use Pally\Payment\Model\Order\PaymentStateMachine;
@@ -72,7 +73,7 @@ class Processor
         ]);
     }
 
-    private function isDuplicateFinalEvent(Order $order, \Magento\Sales\Model\Order\Payment $payment, string $trsId): bool
+    private function isDuplicateFinalEvent(Order $order, Payment $payment, string $trsId): bool
     {
         $processedTrsId = (string) $payment->getAdditionalInformation('pally_trs_id');
         $currentPallyStatus = (string) $payment->getAdditionalInformation('pally_status');
@@ -103,7 +104,7 @@ class Processor
     }
 
     private function savePaymentMetadata(
-        \Magento\Sales\Model\Order\Payment $payment,
+        Payment $payment,
         array $webhookData,
         string $pallyStatus,
         string $trsId
@@ -120,7 +121,7 @@ class Processor
     }
 
     private function setAdditionalInformationIfNotEmpty(
-        \Magento\Sales\Model\Order\Payment $payment,
+        Payment $payment,
         string $key,
         mixed $value
     ): void {
