@@ -36,8 +36,8 @@ class BillCreateDataBuilder implements BuilderInterface
             'custom' => $order->getOrderIncrementId(),
             'description' => __('Order #%1', $order->getOrderIncrementId())->render(),
             'payer_pays_commission' => '0',
-            'success_url' => $baseUrl . '/pally/return/success',
-            'fail_url' => $baseUrl . '/pally/return/fail',
+            'success_url' => $baseUrl . '/pally/callback/success',
+            'fail_url' => $baseUrl . '/pally/callback/fail',
             'shop_url' => $baseUrl . '/',
         ];
     }

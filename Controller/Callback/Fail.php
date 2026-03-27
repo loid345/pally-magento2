@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Pally\Payment\Controller\Return;
+namespace Pally\Payment\Controller\Callback;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\App\Action\HttpGetActionInterface;
