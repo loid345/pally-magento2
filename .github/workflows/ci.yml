@@ -71,7 +71,9 @@ jobs:
       - name: Install PHPStan
         run: composer global require phpstan/phpstan phpstan/extension-installer
       - name: Run PHPStan
-        run: "$(composer global config home)/vendor/bin/phpstan" analyse -c phpstan.neon --no-progress --error-format=github
+        run: |
+          PHPSTAN_BIN="$(composer global config home)/vendor/bin/phpstan"
+          "$PHPSTAN_BIN" analyse -c phpstan.neon --no-progress --error-format=github
 
   phpmd:
     name: PHP Mess Detector
