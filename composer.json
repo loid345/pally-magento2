@@ -18,5 +18,10 @@
         "psr-4": {
             "Pally\\Payment\\": ""
         }
+    },
+    "config": {
+        "allow-plugins": {
+            "phpstan/extension-installer": true
+        }
     }
 }
