@@ -52,7 +52,7 @@ class PaymentStatus
             throw new \RuntimeException('Pally payment/status failed with HTTP ' . $status);
         }
 
-        return json_decode($body, true, 512, JSON_THROW_ON_ERROR);
+        return $this->decodeJson($body, 'payment/status');
     }
 
     public function getBillStatus(string $billId, ?int $storeId = null): array
@@ -90,6 +90,19 @@ class PaymentStatus
             throw new \RuntimeException('Pally bill/status failed with HTTP ' . $status);
         }
 
-        return json_decode($body, true, 512, JSON_THROW_ON_ERROR);
+        return $this->decodeJson($body, 'bill/status');
+    }
+
+    private function decodeJson(string $body, string $endpoint): array
+    {
+        try {
+            return json_decode($body, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            $this->logger->error('Pally ' . $endpoint . ': invalid JSON response', [
+                'response' => $body,
+                'error' => $e->getMessage(),
+            ]);
+            throw new \RuntimeException('Pally ' . $endpoint . ' returned invalid JSON');
+        }
     }
 }

@@ -35,3 +35,6 @@
 "Payment failed via Pally. Order cancelled.","Payment failed via Pally. Order cancelled."
 "Pally: payment underpaid. Order placed on hold for manual review.","Pally: payment underpaid. Order placed on hold for manual review."
 "Order #%1","Order #%1"
+"Payment redirect URL is not available. Please try again.","Payment redirect URL is not available. Please try again."
+"Payment service returned invalid response.","Payment service returned invalid response."
+"Payment service rejected the request.","Payment service rejected the request."

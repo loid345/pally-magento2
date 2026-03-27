@@ -59,12 +59,20 @@ class BillCreate implements ClientInterface
                 'http_status' => $status,
                 'response' => $responseBody,
             ]);
-            throw new \Magento\Payment\Gateway\Http\ClientException(
+            throw new ClientException(
                 __('Payment service temporarily unavailable. Please try again later.')
             );
         }
 
-        $json = json_decode($responseBody, true, 512, JSON_THROW_ON_ERROR);
+        try {
+            $json = json_decode($responseBody, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            $this->logger->error('Pally bill/create: invalid JSON response', [
+                'response' => $responseBody,
+                'error' => $e->getMessage(),
+            ]);
+            throw new ClientException(__('Payment service returned invalid response.'));
+        }
 
         return $json;
     }

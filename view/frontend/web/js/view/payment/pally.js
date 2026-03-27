@@ -1,7 +1,9 @@
 define([
     'Magento_Checkout/js/view/payment/default',
-    'Magento_Checkout/js/model/full-screen-loader'
-], function (Component, fullScreenLoader) {
+    'Magento_Checkout/js/model/full-screen-loader',
+    'Magento_Checkout/js/model/error-processor',
+    'mage/translate'
+], function (Component, fullScreenLoader, errorProcessor, $t) {
     'use strict';
 
     return Component.extend({
@@ -42,6 +44,12 @@ define([
             if (config && config.redirectUrl) {
                 fullScreenLoader.startLoader();
                 window.location.replace(config.redirectUrl);
+            } else {
+                fullScreenLoader.stopLoader();
+                errorProcessor.process({
+                    status: 500,
+                    responseText: JSON.stringify({message: $t('Payment redirect URL is not available. Please try again.')})
+                });
             }
         }
     });

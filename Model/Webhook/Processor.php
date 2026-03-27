@@ -106,8 +106,8 @@ class Processor
 
     private function handleSuccess(Order $order, string $trsId): void
     {
-        // Don't create invoice if already exists
-        if ($order->hasInvoices()) {
+        // Don't create invoice if already exists or can't be invoiced
+        if ($order->hasInvoices() || !$order->canInvoice()) {
             $order->setState(Order::STATE_PROCESSING);
             $order->setStatus('processing');
             $this->orderRepository->save($order);

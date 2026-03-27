@@ -56,7 +56,7 @@ class Config
     {
         return (string) $this->scopeConfig->getValue(
             self::XML_PATH_PREFIX . 'api_token',
-            ScopeInterface::SCOPE_WEBSITE,
+            ScopeInterface::SCOPE_STORE,
             $storeId
         );
     }
@@ -65,7 +65,7 @@ class Config
     {
         return (string) $this->scopeConfig->getValue(
             self::XML_PATH_PREFIX . 'shop_id',
-            ScopeInterface::SCOPE_WEBSITE,
+            ScopeInterface::SCOPE_STORE,
             $storeId
         );
     }
@@ -74,7 +74,7 @@ class Config
     {
         return rtrim((string) $this->scopeConfig->getValue(
             self::XML_PATH_PREFIX . 'api_url',
-            ScopeInterface::SCOPE_WEBSITE,
+            ScopeInterface::SCOPE_STORE,
             $storeId
         ), '/');
     }
@@ -83,7 +83,7 @@ class Config
     {
         return (string) $this->scopeConfig->getValue(
             self::XML_PATH_PREFIX . 'bill_type',
-            ScopeInterface::SCOPE_WEBSITE,
+            ScopeInterface::SCOPE_STORE,
             $storeId
         );
     }
@@ -92,7 +92,7 @@ class Config
     {
         return (int) $this->scopeConfig->getValue(
             self::XML_PATH_PREFIX . 'lifetime',
-            ScopeInterface::SCOPE_WEBSITE,
+            ScopeInterface::SCOPE_STORE,
             $storeId
         );
     }
@@ -101,7 +101,7 @@ class Config
     {
         return $this->scopeConfig->isSetFlag(
             self::XML_PATH_PREFIX . 'debug',
-            ScopeInterface::SCOPE_WEBSITE,
+            ScopeInterface::SCOPE_STORE,
             $storeId
         );
     }

@@ -35,3 +35,6 @@
 "Payment failed via Pally. Order cancelled.","Оплата через Pally не удалась. Заказ отменён."
 "Pally: payment underpaid. Order placed on hold for manual review.","Pally: недоплата. Заказ поставлен на удержание для ручной проверки."
 "Order #%1","Заказ #%1"
+"Payment redirect URL is not available. Please try again.","URL перенаправления для оплаты недоступен. Пожалуйста, попробуйте снова."
+"Payment service returned invalid response.","Сервис оплаты вернул некорректный ответ."
+"Payment service rejected the request.","Сервис оплаты отклонил запрос."
