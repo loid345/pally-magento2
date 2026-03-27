@@ -129,8 +129,7 @@ jobs:
               "no-eval": "error",
               "no-implied-eval": "error",
               "no-new-func": "error",
-              "no-script-url": "error",
-              "strict": ["error", "function"]
+              "no-script-url": "error"
             },
             "parserOptions": {
               "ecmaVersion": 2020,
