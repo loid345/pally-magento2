@@ -83,28 +83,55 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
     private function resolveStoreId(string $custom, string $invId): ?int
     {
         if ($custom !== '') {
-            $collection = $this->orderCollectionFactory->create();
-            $collection->addFieldToFilter('increment_id', $custom);
-            $collection->setPageSize(1);
-            $order = $collection->getFirstItem();
-            if ($order && $order->getId()) {
+            $order = $this->findOrderByIncrementId($custom);
+            if ($order !== null) {
                 return (int) $order->getStoreId();
             }
         }
 
         if ($invId !== '') {
-            $collection = $this->orderCollectionFactory->create();
-            $collection->join(
-                ['sop' => 'sales_order_payment'],
-                'main_table.entity_id = sop.parent_id',
-                []
-            );
-            $collection->addFieldToFilter('sop.additional_information', ['like' => '%' . $invId . '%']);
-            $collection->setPageSize(1);
-            $order = $collection->getFirstItem();
-            if ($order && $order->getId()) {
+            $order = $this->findOrderByIncrementId($invId);
+            if ($order !== null) {
                 return (int) $order->getStoreId();
             }
+
+            $order = $this->findOrderByBillId($invId);
+            if ($order !== null) {
+                return (int) $order->getStoreId();
+            }
+        }
+
+        return null;
+    }
+
+    private function findOrderByIncrementId(string $incrementId): ?\Magento\Sales\Model\Order
+    {
+        $collection = $this->orderCollectionFactory->create();
+        $collection->addFieldToFilter('increment_id', $incrementId);
+        $collection->setPageSize(1);
+        $order = $collection->getFirstItem();
+
+        if ($order && $order->getId()) {
+            return $order;
+        }
+
+        return null;
+    }
+
+    private function findOrderByBillId(string $billId): ?\Magento\Sales\Model\Order
+    {
+        $collection = $this->orderCollectionFactory->create();
+        $collection->join(
+            ['sop' => 'sales_order_payment'],
+            'main_table.entity_id = sop.parent_id',
+            []
+        );
+        $collection->addFieldToFilter('sop.additional_information', ['like' => '%' . $billId . '%']);
+        $collection->setPageSize(1);
+        $order = $collection->getFirstItem();
+
+        if ($order && $order->getId()) {
+            return $order;
         }
 
         return null;

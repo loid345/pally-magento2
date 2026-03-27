@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ['*']
+    branches: ['**']
   pull_request:
-    branches: ['*']
+    branches: ['**']
 
 jobs:
   composer-validate:
@@ -85,7 +85,7 @@ jobs:
           php-version: '8.3'
           tools: phpmd
       - name: Run PHPMD
-        run: phpmd . github phpmd-ruleset.xml --exclude vendor/
+        run: phpmd . text phpmd-ruleset.xml --exclude vendor/
 
   xml-validation:
     name: XML Validation
@@ -345,8 +345,8 @@ jobs:
             echo "::error::config.xml must define <pally> payment method"
             exit 1
           fi
-          if ! grep -q 'PallyPaymentFacade' etc/config.xml; then
-            echo "::error::config.xml must reference PallyPaymentFacade model"
+          if ! grep -q '<model>PallyPaymentFacade</model>' etc/config.xml; then
+            echo "::error::config.xml must reference PallyPaymentFacade model in <model> node"
             exit 1
           fi
           echo "config.xml structure OK"

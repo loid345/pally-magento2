@@ -105,7 +105,7 @@ class PollPendingPayments
 
         // Build webhook-like data and process
         $webhookData = [
-            'InvId' => $billId,
+            'InvId' => $order->getIncrementId(),
             'OutSum' => sprintf('%.2f', (float) $order->getGrandTotal()),
             'custom' => $order->getIncrementId(),
             'Status' => $pallyStatus,

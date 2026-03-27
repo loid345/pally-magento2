@@ -115,7 +115,9 @@ class Processor
         }
 
         $payment = $order->getPayment();
-        $payment->setTransactionId($trsId);
+        if ($trsId !== '') {
+            $payment->setTransactionId($trsId);
+        }
         $payment->setIsTransactionClosed(true);
         $payment->setIsTransactionPending(false);
 
@@ -160,29 +162,56 @@ class Processor
     {
         // Primary lookup by custom (order increment_id)
         if ($custom !== '') {
-            $collection = $this->orderCollectionFactory->create();
-            $collection->addFieldToFilter('increment_id', $custom);
-            $collection->setPageSize(1);
-            $order = $collection->getFirstItem();
-            if ($order && $order->getId()) {
+            $order = $this->findOrderByIncrementId($custom);
+            if ($order !== null) {
                 return $order;
             }
         }
 
-        // Fallback: search by bill_id in payment additional_information
+        // Fallback: use InvId as order increment_id according to API callback contract.
         if ($invId !== '') {
-            $collection = $this->orderCollectionFactory->create();
-            $collection->join(
-                ['sop' => 'sales_order_payment'],
-                'main_table.entity_id = sop.parent_id',
-                []
-            );
-            $collection->addFieldToFilter('sop.additional_information', ['like' => '%' . $invId . '%']);
-            $collection->setPageSize(1);
-            $order = $collection->getFirstItem();
-            if ($order && $order->getId()) {
+            $order = $this->findOrderByIncrementId($invId);
+            if ($order !== null) {
                 return $order;
             }
+
+            $order = $this->findOrderByBillId($invId);
+            if ($order !== null) {
+                return $order;
+            }
+        }
+
+        return null;
+    }
+
+    private function findOrderByIncrementId(string $incrementId): ?Order
+    {
+        $collection = $this->orderCollectionFactory->create();
+        $collection->addFieldToFilter('increment_id', $incrementId);
+        $collection->setPageSize(1);
+        $order = $collection->getFirstItem();
+
+        if ($order && $order->getId()) {
+            return $order;
+        }
+
+        return null;
+    }
+
+    private function findOrderByBillId(string $billId): ?Order
+    {
+        $collection = $this->orderCollectionFactory->create();
+        $collection->join(
+            ['sop' => 'sales_order_payment'],
+            'main_table.entity_id = sop.parent_id',
+            []
+        );
+        $collection->addFieldToFilter('sop.additional_information', ['like' => '%' . $billId . '%']);
+        $collection->setPageSize(1);
+        $order = $collection->getFirstItem();
+
+        if ($order && $order->getId()) {
+            return $order;
         }
 
         return null;
