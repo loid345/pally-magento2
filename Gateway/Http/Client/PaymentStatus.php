@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Pally\Payment\Gateway\Http\Client;
 
+use JsonException;
 use Magento\Framework\HTTP\Client\Curl;
 use Pally\Payment\Gateway\Config\Config;
 use Psr\Log\LoggerInterface;
+use RuntimeException;
 
 class PaymentStatus
 {
@@ -49,7 +51,7 @@ class PaymentStatus
                 'http_status' => $status,
                 'response' => $body,
             ]);
-            throw new \RuntimeException('Pally payment/status failed with HTTP ' . $status);
+            throw new RuntimeException('Pally payment/status failed with HTTP ' . $status);
         }
 
         return $this->decodeJson($body, 'payment/status');
@@ -87,7 +89,7 @@ class PaymentStatus
                 'http_status' => $status,
                 'response' => $body,
             ]);
-            throw new \RuntimeException('Pally bill/status failed with HTTP ' . $status);
+            throw new RuntimeException('Pally bill/status failed with HTTP ' . $status);
         }
 
         return $this->decodeJson($body, 'bill/status');
@@ -97,12 +99,12 @@ class PaymentStatus
     {
         try {
             return json_decode($body, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException $e) {
+        } catch (JsonException $e) {
             $this->logger->error('Pally ' . $endpoint . ': invalid JSON response', [
                 'response' => $body,
                 'error' => $e->getMessage(),
             ]);
-            throw new \RuntimeException('Pally ' . $endpoint . ' returned invalid JSON');
+            throw new RuntimeException('Pally ' . $endpoint . ' returned invalid JSON');
         }
     }
 }

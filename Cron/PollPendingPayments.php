@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Pally\Payment\Cron;
 
+use DateTime;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\ResourceModel\Order\CollectionFactory as OrderCollectionFactory;
 use Pally\Payment\Gateway\Http\Client\PaymentStatus;
@@ -34,7 +35,7 @@ class PollPendingPayments
         );
         $collection->addFieldToFilter('sop.method', ConfigProvider::CODE);
 
-        $threshold = new \DateTime();
+        $threshold = new DateTime();
         $threshold->modify('-' . self::PENDING_THRESHOLD_MINUTES . ' minutes');
         $collection->addFieldToFilter('main_table.created_at', ['lteq' => $threshold->format('Y-m-d H:i:s')]);
 
@@ -59,40 +60,9 @@ class PollPendingPayments
             return;
         }
 
-        $trsId = (string) $payment->getAdditionalInformation('pally_trs_id');
-        $billId = (string) $payment->getAdditionalInformation('bill_id');
-        $storeId = (int) $order->getStoreId();
-
-        $pallyStatus = null;
-        $resolvedTrsId = $trsId;
-
-        // Prefer payment/status if we have a TrsId
-        if ($trsId !== '') {
-            try {
-                $response = $this->paymentStatusClient->getPaymentStatus($trsId, $storeId);
-                $pallyStatus = strtoupper((string) ($response['Status'] ?? $response['status'] ?? ''));
-            } catch (\Exception $e) {
-                $this->logger->debug('Pally cron: payment/status failed, trying bill/status', [
-                    'order' => $order->getIncrementId(),
-                ]);
-            }
-        }
-
-        // Fallback to bill/status
-        if (!$pallyStatus && $billId !== '') {
-            try {
-                $response = $this->paymentStatusClient->getBillStatus($billId, $storeId);
-                $pallyStatus = strtoupper((string) ($response['Status'] ?? $response['status'] ?? ''));
-                if ($resolvedTrsId === '' && !empty($response['TrsId'])) {
-                    $resolvedTrsId = (string) $response['TrsId'];
-                    $payment->setAdditionalInformation('pally_trs_id', $resolvedTrsId);
-                }
-            } catch (\Exception $e) {
-                $this->logger->debug('Pally cron: bill/status failed', [
-                    'order' => $order->getIncrementId(),
-                ]);
-            }
-        }
+        $statusData = $this->resolveStatusData($order, $payment);
+        $pallyStatus = $statusData['status'];
+        $resolvedTrsId = $statusData['trs_id'];
 
         if (!$pallyStatus) {
             return;
@@ -118,5 +88,75 @@ class PollPendingPayments
             'order' => $order->getIncrementId(),
             'status' => $pallyStatus,
         ]);
+    }
+
+    /**
+     * @return array{status: string, trs_id: string}
+     */
+    private function resolveStatusData(Order $order, \Magento\Sales\Model\Order\Payment $payment): array
+    {
+        $trsId = (string) $payment->getAdditionalInformation('pally_trs_id');
+        $billId = (string) $payment->getAdditionalInformation('bill_id');
+        $storeId = (int) $order->getStoreId();
+
+        $paymentStatus = $this->fetchPaymentStatus($order, $trsId, $storeId);
+        if ($paymentStatus !== '') {
+            return ['status' => $paymentStatus, 'trs_id' => $trsId];
+        }
+
+        return $this->fetchBillStatus($order, $payment, $billId, $trsId, $storeId);
+    }
+
+    private function fetchPaymentStatus(Order $order, string $trsId, int $storeId): string
+    {
+        if ($trsId === '') {
+            return '';
+        }
+
+        try {
+            $response = $this->paymentStatusClient->getPaymentStatus($trsId, $storeId);
+        } catch (\Exception $e) {
+            $this->logger->debug('Pally cron: payment/status failed, trying bill/status', [
+                'order' => $order->getIncrementId(),
+            ]);
+            return '';
+        }
+
+        return strtoupper((string) ($response['Status'] ?? $response['status'] ?? ''));
+    }
+
+    /**
+     * @return array{status: string, trs_id: string}
+     */
+    private function fetchBillStatus(
+        Order $order,
+        \Magento\Sales\Model\Order\Payment $payment,
+        string $billId,
+        string $trsId,
+        int $storeId
+    ): array {
+        if ($billId === '') {
+            return ['status' => '', 'trs_id' => $trsId];
+        }
+
+        try {
+            $response = $this->paymentStatusClient->getBillStatus($billId, $storeId);
+        } catch (\Exception $e) {
+            $this->logger->debug('Pally cron: bill/status failed', [
+                'order' => $order->getIncrementId(),
+            ]);
+            return ['status' => '', 'trs_id' => $trsId];
+        }
+
+        $resolvedTrsId = $trsId;
+        if ($resolvedTrsId === '' && !empty($response['TrsId'])) {
+            $resolvedTrsId = (string) $response['TrsId'];
+            $payment->setAdditionalInformation('pally_trs_id', $resolvedTrsId);
+        }
+
+        return [
+            'status' => strtoupper((string) ($response['Status'] ?? $response['status'] ?? '')),
+            'trs_id' => $resolvedTrsId,
+        ];
     }
 }
