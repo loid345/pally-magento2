@@ -4,8 +4,6 @@ define([
     'Magento_Checkout/js/model/error-processor',
     'mage/translate'
 ], function (Component, fullScreenLoader, errorProcessor, $t) {
-    'use strict';
-
     return Component.extend({
         defaults: {
             template: 'Pally_Payment/payment/pally',

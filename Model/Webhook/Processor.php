@@ -27,81 +27,122 @@ class Processor
 
     public function process(array $webhookData): void
     {
-        $custom = $webhookData['custom'] ?? '';
-        $invId = $webhookData['InvId'] ?? '';
+        $custom = (string) ($webhookData['custom'] ?? '');
+        $invId = (string) ($webhookData['InvId'] ?? '');
         $pallyStatus = strtoupper((string) ($webhookData['Status'] ?? ''));
         $trsId = (string) ($webhookData['TrsId'] ?? '');
 
         $order = $this->findOrder($custom, $invId);
-        if (!$order) {
-            $this->logger->warning('Pally webhook: order not found', [
-                'custom' => $custom,
-                'InvId' => $invId,
-            ]);
+        if ($order === null) {
+            $this->logOrderNotFound($custom, $invId);
             return;
         }
 
-        // Idempotency: skip if already processed with this TrsId
-        $payment = $order->getPayment();
-        $processedTrsId = $payment->getAdditionalInformation('pally_trs_id');
-        $currentPallyStatus = $payment->getAdditionalInformation('pally_status');
-
-        if ($processedTrsId === $trsId && $this->stateMachine->isFinalStatus((string) $currentPallyStatus)) {
-            $this->logger->info('Pally webhook: duplicate, skipping', [
-                'order' => $order->getIncrementId(),
-                'TrsId' => $trsId,
-            ]);
+        if ($this->isDuplicateFinalNotification($order, $trsId)) {
+            $this->logDuplicateNotification($order, $trsId);
             return;
         }
 
-        // Don't update if order is already in a final state
-        if (in_array($order->getState(), [Order::STATE_COMPLETE, Order::STATE_CLOSED], true)) {
-            $this->logger->info('Pally webhook: order already in final state', [
-                'order' => $order->getIncrementId(),
-                'state' => $order->getState(),
-            ]);
+        if ($this->isOrderInFinalState($order)) {
+            $this->logOrderAlreadyFinal($order);
             return;
         }
 
-        // Save payment info
-        $payment->setAdditionalInformation('pally_status', $pallyStatus);
-        if ($trsId) {
-            $payment->setAdditionalInformation('pally_trs_id', $trsId);
-        }
-        if (!empty($webhookData['AccountType'])) {
-            $payment->setAdditionalInformation('pally_account_type', $webhookData['AccountType']);
-        }
-        if (!empty($webhookData['OutSum'])) {
-            $payment->setAdditionalInformation('pally_out_sum', $webhookData['OutSum']);
-        }
-        if (!empty($webhookData['Commission'])) {
-            $payment->setAdditionalInformation('pally_commission', $webhookData['Commission']);
-        }
-
-        $stateInfo = $this->stateMachine->getMagentoState($pallyStatus);
-
-        if ($pallyStatus === PaymentStateMachine::PALLY_STATUS_SUCCESS
-            || $pallyStatus === PaymentStateMachine::PALLY_STATUS_OVERPAID
-        ) {
-            $this->handleSuccess($order, $trsId);
-        } elseif ($pallyStatus === PaymentStateMachine::PALLY_STATUS_FAIL) {
-            $this->handleFail($order);
-        } elseif ($pallyStatus === PaymentStateMachine::PALLY_STATUS_UNDERPAID) {
-            $this->handleUnderpaid($order);
-        } else {
-            $order->setState($stateInfo['state']);
-            $order->setStatus($stateInfo['status']);
-            $order->addCommentToStatusHistory(
-                __('Pally payment status: %1', $pallyStatus)->render()
-            );
-            $this->orderRepository->save($order);
-        }
+        $this->updatePaymentMetadata($order, $webhookData, $pallyStatus, $trsId);
+        $this->applyStatusUpdate($order, $pallyStatus, $trsId);
 
         $this->logger->info('Pally webhook: processed', [
             'order' => $order->getIncrementId(),
             'status' => $pallyStatus,
             'TrsId' => $trsId,
         ]);
+    }
+
+    private function logOrderNotFound(string $custom, string $invId): void
+    {
+        $this->logger->warning('Pally webhook: order not found', [
+            'custom' => $custom,
+            'InvId' => $invId,
+        ]);
+    }
+
+    private function isDuplicateFinalNotification(Order $order, string $trsId): bool
+    {
+        $payment = $order->getPayment();
+        $processedTrsId = $payment->getAdditionalInformation('pally_trs_id');
+        $currentPallyStatus = $payment->getAdditionalInformation('pally_status');
+
+        return $processedTrsId === $trsId
+            && $this->stateMachine->isFinalStatus((string) $currentPallyStatus);
+    }
+
+    private function logDuplicateNotification(Order $order, string $trsId): void
+    {
+        $this->logger->info('Pally webhook: duplicate, skipping', [
+            'order' => $order->getIncrementId(),
+            'TrsId' => $trsId,
+        ]);
+    }
+
+    private function isOrderInFinalState(Order $order): bool
+    {
+        return in_array($order->getState(), [Order::STATE_COMPLETE, Order::STATE_CLOSED], true);
+    }
+
+    private function logOrderAlreadyFinal(Order $order): void
+    {
+        $this->logger->info('Pally webhook: order already in final state', [
+            'order' => $order->getIncrementId(),
+            'state' => $order->getState(),
+        ]);
+    }
+
+    private function updatePaymentMetadata(Order $order, array $webhookData, string $pallyStatus, string $trsId): void
+    {
+        $payment = $order->getPayment();
+        $payment->setAdditionalInformation('pally_status', $pallyStatus);
+
+        if ($trsId !== '') {
+            $payment->setAdditionalInformation('pally_trs_id', $trsId);
+        }
+
+        $metadataMap = [
+            'AccountType' => 'pally_account_type',
+            'OutSum' => 'pally_out_sum',
+            'Commission' => 'pally_commission',
+        ];
+
+        foreach ($metadataMap as $payloadKey => $paymentKey) {
+            if (!empty($webhookData[$payloadKey])) {
+                $payment->setAdditionalInformation($paymentKey, $webhookData[$payloadKey]);
+            }
+        }
+    }
+
+    private function applyStatusUpdate(Order $order, string $pallyStatus, string $trsId): void
+    {
+        if (in_array($pallyStatus, [PaymentStateMachine::PALLY_STATUS_SUCCESS, PaymentStateMachine::PALLY_STATUS_OVERPAID], true)) {
+            $this->handleSuccess($order, $trsId);
+            return;
+        }
+
+        if ($pallyStatus === PaymentStateMachine::PALLY_STATUS_FAIL) {
+            $this->handleFail($order);
+            return;
+        }
+
+        if ($pallyStatus === PaymentStateMachine::PALLY_STATUS_UNDERPAID) {
+            $this->handleUnderpaid($order);
+            return;
+        }
+
+        $stateInfo = $this->stateMachine->getMagentoState($pallyStatus);
+        $order->setState($stateInfo['state']);
+        $order->setStatus($stateInfo['status']);
+        $order->addCommentToStatusHistory(
+            __('Pally payment status: %1', $pallyStatus)->render()
+        );
+        $this->orderRepository->save($order);
     }
 
     private function handleSuccess(Order $order, string $trsId): void
