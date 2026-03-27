@@ -13,6 +13,11 @@ use Magento\Sales\Model\Order;
 
 class Fail implements HttpGetActionInterface
 {
+    /**
+     * @param CheckoutSession $checkoutSession Checkout session.
+     * @param RedirectFactory $redirectFactory Redirect result factory.
+     * @param ManagerInterface $messageManager Message manager.
+     */
     public function __construct(
         private readonly CheckoutSession $checkoutSession,
         private readonly RedirectFactory $redirectFactory,
@@ -20,6 +25,11 @@ class Fail implements HttpGetActionInterface
     ) {
     }
 
+    /**
+     * Handle failure return URL from payment provider.
+     *
+     * @return ResultInterface
+     */
     public function execute(): ResultInterface
     {
         $redirect = $this->redirectFactory->create();

@@ -12,12 +12,22 @@ class Config
 {
     private const XML_PATH_PREFIX = 'payment/pally/';
 
+    /**
+     * @param ScopeConfigInterface $scopeConfig Scope config.
+     * @param EncryptorInterface $encryptor Encryptor.
+     */
     public function __construct(
         private readonly ScopeConfigInterface $scopeConfig,
         private readonly EncryptorInterface $encryptor
     ) {
     }
 
+    /**
+     * Check whether payment method is enabled.
+     *
+     * @param int|null $storeId
+     * @return bool
+     */
     public function isActive(?int $storeId = null): bool
     {
         return $this->scopeConfig->isSetFlag(
@@ -27,6 +37,12 @@ class Config
         );
     }
 
+    /**
+     * Get payment method title.
+     *
+     * @param int|null $storeId
+     * @return string
+     */
     public function getTitle(?int $storeId = null): string
     {
         return (string) $this->scopeConfig->getValue(
@@ -36,6 +52,12 @@ class Config
         );
     }
 
+    /**
+     * Get payment method description.
+     *
+     * @param int|null $storeId
+     * @return string
+     */
     public function getDescription(?int $storeId = null): string
     {
         return (string) $this->scopeConfig->getValue(
@@ -45,6 +67,12 @@ class Config
         );
     }
 
+    /**
+     * Get payment instructions.
+     *
+     * @param int|null $storeId
+     * @return string
+     */
     public function getInstructions(?int $storeId = null): string
     {
         return (string) $this->scopeConfig->getValue(
@@ -54,6 +82,12 @@ class Config
         );
     }
 
+    /**
+     * Get decrypted API token.
+     *
+     * @param int|null $storeId
+     * @return string
+     */
     public function getApiToken(?int $storeId = null): string
     {
         $value = (string) $this->scopeConfig->getValue(
@@ -69,6 +103,12 @@ class Config
         return (string) $this->encryptor->decrypt($value);
     }
 
+    /**
+     * Get merchant shop ID.
+     *
+     * @param int|null $storeId
+     * @return string
+     */
     public function getShopId(?int $storeId = null): string
     {
         return (string) $this->scopeConfig->getValue(
@@ -78,6 +118,12 @@ class Config
         );
     }
 
+    /**
+     * Get normalized API base URL without trailing slash.
+     *
+     * @param int|null $storeId
+     * @return string
+     */
     public function getApiUrl(?int $storeId = null): string
     {
         return rtrim((string) $this->scopeConfig->getValue(
@@ -87,6 +133,12 @@ class Config
         ), '/');
     }
 
+    /**
+     * Get configured bill type.
+     *
+     * @param int|null $storeId
+     * @return string
+     */
     public function getBillType(?int $storeId = null): string
     {
         return (string) $this->scopeConfig->getValue(
@@ -96,6 +148,12 @@ class Config
         );
     }
 
+    /**
+     * Get bill lifetime in minutes.
+     *
+     * @param int|null $storeId
+     * @return int
+     */
     public function getLifetime(?int $storeId = null): int
     {
         return (int) $this->scopeConfig->getValue(
@@ -105,6 +163,12 @@ class Config
         );
     }
 
+    /**
+     * Check if debug logging is enabled.
+     *
+     * @param int|null $storeId
+     * @return bool
+     */
     public function isDebugMode(?int $storeId = null): bool
     {
         return $this->scopeConfig->isSetFlag(

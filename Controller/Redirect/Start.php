@@ -12,6 +12,11 @@ use Magento\Framework\Message\ManagerInterface;
 
 class Start implements HttpGetActionInterface
 {
+    /**
+     * @param CheckoutSession $checkoutSession Checkout session.
+     * @param RedirectFactory $redirectFactory Redirect result factory.
+     * @param ManagerInterface $messageManager Message manager.
+     */
     public function __construct(
         private readonly CheckoutSession $checkoutSession,
         private readonly RedirectFactory $redirectFactory,
@@ -19,6 +24,11 @@ class Start implements HttpGetActionInterface
     ) {
     }
 
+    /**
+     * Redirect customer to hosted payment page.
+     *
+     * @return ResultInterface
+     */
     public function execute(): ResultInterface
     {
         $redirect = $this->redirectFactory->create();

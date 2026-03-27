@@ -13,6 +13,11 @@ use Psr\Log\LoggerInterface;
 
 class BillCreate implements ClientInterface
 {
+    /**
+     * @param Curl $curl HTTP client.
+     * @param Config $config Module configuration.
+     * @param LoggerInterface $logger Logger instance.
+     */
     public function __construct(
         private readonly Curl $curl,
         private readonly Config $config,
@@ -20,6 +25,12 @@ class BillCreate implements ClientInterface
     ) {
     }
 
+    /**
+     * Execute bill creation request.
+     *
+     * @param TransferInterface $transferObject
+     * @return array
+     */
     public function placeRequest(TransferInterface $transferObject): array
     {
         $body = $transferObject->getBody();
@@ -77,6 +88,12 @@ class BillCreate implements ClientInterface
         return $json;
     }
 
+    /**
+     * Mask sensitive request fields for debug logs.
+     *
+     * @param array $data
+     * @return array
+     */
     private function maskSensitiveData(array $data): array
     {
         $masked = $data;

@@ -6,15 +6,15 @@ namespace Pally\Payment\Gateway\Validator;
 
 use Magento\Payment\Gateway\Validator\AbstractValidator;
 use Magento\Payment\Gateway\Validator\ResultInterface;
-use Magento\Payment\Gateway\Validator\ResultInterfaceFactory;
 
 class BillCreateValidator extends AbstractValidator
 {
-    public function __construct(ResultInterfaceFactory $resultFactory)
-    {
-        parent::__construct($resultFactory);
-    }
-
+    /**
+     * Validate bill creation API response.
+     *
+     * @param array $validationSubject
+     * @return ResultInterface
+     */
     public function validate(array $validationSubject): ResultInterface
     {
         $response = $validationSubject['response'] ?? [];

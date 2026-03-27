@@ -13,6 +13,11 @@ class ConfigProvider implements ConfigProviderInterface
 {
     public const CODE = 'pally';
 
+    /**
+     * @param Config $config Module configuration.
+     * @param UrlInterface $urlBuilder URL builder.
+     * @param StoreManagerInterface $storeManager Store manager.
+     */
     public function __construct(
         private readonly Config $config,
         private readonly UrlInterface $urlBuilder,
@@ -20,6 +25,11 @@ class ConfigProvider implements ConfigProviderInterface
     ) {
     }
 
+    /**
+     * Provide checkout JS config for the payment method.
+     *
+     * @return array
+     */
     public function getConfig(): array
     {
         $storeId = (int) $this->storeManager->getStore()->getId();

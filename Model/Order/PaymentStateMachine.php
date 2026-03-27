@@ -16,6 +16,9 @@ class PaymentStateMachine
     public const PALLY_STATUS_OVERPAID = 'OVERPAID';
 
     /**
+     * Map a Pally status to Magento order state/status pair.
+     *
+     * @param string $pallyStatus
      * @return array{state: string, status: string}
      */
     public function getMagentoState(string $pallyStatus): array
@@ -41,11 +44,22 @@ class PaymentStateMachine
         };
     }
 
+    /**
+     * Check whether a Pally status is terminal.
+     *
+     * @param string $pallyStatus
+     * @return bool
+     */
     public function isFinalStatus(string $pallyStatus): bool
     {
         return in_array(
             strtoupper($pallyStatus),
-            [self::PALLY_STATUS_SUCCESS, self::PALLY_STATUS_FAIL, self::PALLY_STATUS_UNDERPAID, self::PALLY_STATUS_OVERPAID],
+            [
+                self::PALLY_STATUS_SUCCESS,
+                self::PALLY_STATUS_FAIL,
+                self::PALLY_STATUS_UNDERPAID,
+                self::PALLY_STATUS_OVERPAID,
+            ],
             true
         );
     }

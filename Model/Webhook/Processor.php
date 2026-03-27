@@ -15,6 +15,14 @@ use Psr\Log\LoggerInterface;
 
 class Processor
 {
+    /**
+     * @param OrderCollectionFactory $orderCollectionFactory Order lookup collection factory.
+     * @param OrderRepositoryInterface $orderRepository Order repository.
+     * @param InvoiceService $invoiceService Invoice service.
+     * @param Transaction $transaction DB transaction manager.
+     * @param PaymentStateMachine $stateMachine Pally to Magento state mapper.
+     * @param LoggerInterface $logger Logger instance.
+     */
     public function __construct(
         private readonly OrderCollectionFactory $orderCollectionFactory,
         private readonly OrderRepositoryInterface $orderRepository,
@@ -25,6 +33,12 @@ class Processor
     ) {
     }
 
+    /**
+     * Process incoming webhook payload and update order state.
+     *
+     * @param array $webhookData
+     * @return void
+     */
     public function process(array $webhookData): void
     {
         $custom = (string) ($webhookData['custom'] ?? '');
@@ -58,6 +72,13 @@ class Processor
         ]);
     }
 
+    /**
+     * Log order-not-found event for webhook payload.
+     *
+     * @param string $custom
+     * @param string $invId
+     * @return void
+     */
     private function logOrderNotFound(string $custom, string $invId): void
     {
         $this->logger->warning('Pally webhook: order not found', [
@@ -66,6 +87,13 @@ class Processor
         ]);
     }
 
+    /**
+     * Check duplicate terminal notification by transaction id.
+     *
+     * @param Order $order
+     * @param string $trsId
+     * @return bool
+     */
     private function isDuplicateFinalNotification(Order $order, string $trsId): bool
     {
         $payment = $order->getPayment();
@@ -76,6 +104,13 @@ class Processor
             && $this->stateMachine->isFinalStatus((string) $currentPallyStatus);
     }
 
+    /**
+     * Log duplicate webhook notification.
+     *
+     * @param Order $order
+     * @param string $trsId
+     * @return void
+     */
     private function logDuplicateNotification(Order $order, string $trsId): void
     {
         $this->logger->info('Pally webhook: duplicate, skipping', [
@@ -84,11 +119,23 @@ class Processor
         ]);
     }
 
+    /**
+     * Check whether order is already in a terminal Magento state.
+     *
+     * @param Order $order
+     * @return bool
+     */
     private function isOrderInFinalState(Order $order): bool
     {
         return in_array($order->getState(), [Order::STATE_COMPLETE, Order::STATE_CLOSED], true);
     }
 
+    /**
+     * Log event when webhook arrives for terminal Magento order state.
+     *
+     * @param Order $order
+     * @return void
+     */
     private function logOrderAlreadyFinal(Order $order): void
     {
         $this->logger->info('Pally webhook: order already in final state', [
@@ -97,6 +144,15 @@ class Processor
         ]);
     }
 
+    /**
+     * Persist webhook metadata into payment additional information.
+     *
+     * @param Order $order
+     * @param array $webhookData
+     * @param string $pallyStatus
+     * @param string $trsId
+     * @return void
+     */
     private function updatePaymentMetadata(Order $order, array $webhookData, string $pallyStatus, string $trsId): void
     {
         $payment = $order->getPayment();
@@ -119,9 +175,21 @@ class Processor
         }
     }
 
+    /**
+     * Apply mapped status transition for a Pally status.
+     *
+     * @param Order $order
+     * @param string $pallyStatus
+     * @param string $trsId
+     * @return void
+     */
     private function applyStatusUpdate(Order $order, string $pallyStatus, string $trsId): void
     {
-        if (in_array($pallyStatus, [PaymentStateMachine::PALLY_STATUS_SUCCESS, PaymentStateMachine::PALLY_STATUS_OVERPAID], true)) {
+        if (in_array(
+            $pallyStatus,
+            [PaymentStateMachine::PALLY_STATUS_SUCCESS, PaymentStateMachine::PALLY_STATUS_OVERPAID],
+            true
+        )) {
             $this->handleSuccess($order, $trsId);
             return;
         }
@@ -145,6 +213,13 @@ class Processor
         $this->orderRepository->save($order);
     }
 
+    /**
+     * Handle successful payment status by invoicing and moving order to processing.
+     *
+     * @param Order $order
+     * @param string $trsId
+     * @return void
+     */
     private function handleSuccess(Order $order, string $trsId): void
     {
         // Don't create invoice if already exists or can't be invoiced
@@ -175,6 +250,12 @@ class Processor
         $this->transaction->save();
     }
 
+    /**
+     * Handle underpaid payment status.
+     *
+     * @param Order $order
+     * @return void
+     */
     private function handleUnderpaid(Order $order): void
     {
         if ($order->canHold()) {
@@ -186,6 +267,12 @@ class Processor
         }
     }
 
+    /**
+     * Handle failed payment status.
+     *
+     * @param Order $order
+     * @return void
+     */
     private function handleFail(Order $order): void
     {
         if ($order->canCancel()) {
@@ -197,6 +284,13 @@ class Processor
         }
     }
 
+    /**
+     * Find order by increment id or fallback invoice id lookup.
+     *
+     * @param string $custom
+     * @param string $invId
+     * @return Order|null
+     */
     private function findOrder(string $custom, string $invId): ?Order
     {
         // Primary lookup by custom (order increment_id)

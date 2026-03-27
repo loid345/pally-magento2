@@ -17,6 +17,12 @@ class PollPendingPayments
 {
     private const PENDING_THRESHOLD_MINUTES = 10;
 
+    /**
+     * @param OrderCollectionFactory $orderCollectionFactory Order collection factory.
+     * @param PaymentStatus $paymentStatusClient Pally status client.
+     * @param Processor $processor Webhook processor.
+     * @param LoggerInterface $logger Logger instance.
+     */
     public function __construct(
         private readonly OrderCollectionFactory $orderCollectionFactory,
         private readonly PaymentStatus $paymentStatusClient,
@@ -25,6 +31,11 @@ class PollPendingPayments
     ) {
     }
 
+    /**
+     * Poll pending orders and sync Pally statuses.
+     *
+     * @return void
+     */
     public function execute(): void
     {
         $collection = $this->orderCollectionFactory->create();
@@ -54,6 +65,12 @@ class PollPendingPayments
         }
     }
 
+    /**
+     * Poll and process status update for a single order.
+     *
+     * @param Order $order
+     * @return void
+     */
     private function pollOrder(Order $order): void
     {
         $payment = $order->getPayment();
@@ -95,6 +112,15 @@ class PollPendingPayments
         ]);
     }
 
+    /**
+     * Resolve current Pally status and transaction id for order.
+     *
+     * @param Order $order
+     * @param string $trsId
+     * @param string $billId
+     * @param int $storeId
+     * @return array{status: string, trsId: string}
+     */
     private function resolvePallyStatus(Order $order, string $trsId, string $billId, int $storeId): array
     {
         $resolvedTrsId = $trsId;
@@ -115,6 +141,14 @@ class PollPendingPayments
         ];
     }
 
+    /**
+     * Fetch status from payment/status endpoint.
+     *
+     * @param Order $order
+     * @param string $trsId
+     * @param int $storeId
+     * @return string
+     */
     private function fetchPaymentStatus(Order $order, string $trsId, int $storeId): string
     {
         if ($trsId === '') {
@@ -132,6 +166,14 @@ class PollPendingPayments
         }
     }
 
+    /**
+     * Fetch status from bill/status endpoint.
+     *
+     * @param Order $order
+     * @param string $billId
+     * @param int $storeId
+     * @return array{status: string, trsId: string}
+     */
     private function fetchBillStatus(Order $order, string $billId, int $storeId): array
     {
         try {

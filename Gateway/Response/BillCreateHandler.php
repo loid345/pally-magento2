@@ -9,6 +9,13 @@ use Magento\Payment\Gateway\Response\HandlerInterface;
 
 class BillCreateHandler implements HandlerInterface
 {
+    /**
+     * Persist bill creation data on payment instance.
+     *
+     * @param array $handlingSubject
+     * @param array $response
+     * @return void
+     */
     public function handle(array $handlingSubject, array $response): void
     {
         $paymentDO = SubjectReader::readPayment($handlingSubject);

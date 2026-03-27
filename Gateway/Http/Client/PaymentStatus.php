@@ -12,6 +12,11 @@ use RuntimeException;
 
 class PaymentStatus
 {
+    /**
+     * @param Curl $curl HTTP client.
+     * @param Config $config Module configuration.
+     * @param LoggerInterface $logger Logger instance.
+     */
     public function __construct(
         private readonly Curl $curl,
         private readonly Config $config,
@@ -19,6 +24,13 @@ class PaymentStatus
     ) {
     }
 
+    /**
+     * Request payment status by transaction id.
+     *
+     * @param string $paymentId
+     * @param int|null $storeId
+     * @return array
+     */
     public function getPaymentStatus(string $paymentId, ?int $storeId = null): array
     {
         $apiUrl = $this->config->getApiUrl($storeId)
@@ -57,6 +69,13 @@ class PaymentStatus
         return $this->decodeJson($body, 'payment/status');
     }
 
+    /**
+     * Request bill status by bill id.
+     *
+     * @param string $billId
+     * @param int|null $storeId
+     * @return array
+     */
     public function getBillStatus(string $billId, ?int $storeId = null): array
     {
         $apiUrl = $this->config->getApiUrl($storeId)
@@ -95,6 +114,13 @@ class PaymentStatus
         return $this->decodeJson($body, 'bill/status');
     }
 
+    /**
+     * Decode JSON response and throw a runtime exception on failure.
+     *
+     * @param string $body
+     * @param string $endpoint
+     * @return array
+     */
     private function decodeJson(string $body, string $endpoint): array
     {
         try {

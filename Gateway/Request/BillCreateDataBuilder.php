@@ -11,12 +11,22 @@ use Pally\Payment\Gateway\Config\Config;
 
 class BillCreateDataBuilder implements BuilderInterface
 {
+    /**
+     * @param Config $config Module configuration.
+     * @param StoreManagerInterface $storeManager Store manager.
+     */
     public function __construct(
         private readonly Config $config,
         private readonly StoreManagerInterface $storeManager
     ) {
     }
 
+    /**
+     * Build request payload for bill creation.
+     *
+     * @param array $buildSubject
+     * @return array
+     */
     public function build(array $buildSubject): array
     {
         $paymentDO = SubjectReader::readPayment($buildSubject);

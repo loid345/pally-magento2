@@ -17,6 +17,14 @@ use Psr\Log\LoggerInterface;
 
 class Index implements HttpPostActionInterface, CsrfAwareActionInterface
 {
+    /**
+     * @param RequestInterface $request HTTP request instance.
+     * @param JsonFactory $resultJsonFactory JSON result factory.
+     * @param SignatureVerifier $signatureVerifier Webhook signature verifier.
+     * @param Processor $processor Webhook processor.
+     * @param OrderCollectionFactory $orderCollectionFactory Order collection factory.
+     * @param LoggerInterface $logger Logger instance.
+     */
     public function __construct(
         private readonly RequestInterface $request,
         private readonly JsonFactory $resultJsonFactory,
@@ -27,6 +35,11 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
     ) {
     }
 
+    /**
+     * Handle webhook callback request.
+     *
+     * @return ResultInterface
+     */
     public function execute(): ResultInterface
     {
         $result = $this->resultJsonFactory->create();
@@ -80,6 +93,13 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
         return $result->setHttpResponseCode(200)->setData(['ok' => true]);
     }
 
+    /**
+     * Resolve store scope for signature validation.
+     *
+     * @param string $custom Increment ID from webhook.
+     * @param string $invId External invoice ID.
+     * @return int|null
+     */
     private function resolveStoreId(string $custom, string $invId): ?int
     {
         if ($custom !== '') {
@@ -110,11 +130,19 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
         return null;
     }
 
+    /**
+     * @param RequestInterface $_request
+     * @return InvalidRequestException|null
+     */
     public function createCsrfValidationException(RequestInterface $_request): ?InvalidRequestException
     {
         return null;
     }
 
+    /**
+     * @param RequestInterface $_request
+     * @return bool|null
+     */
     public function validateForCsrf(RequestInterface $_request): ?bool
     {
         return true;
