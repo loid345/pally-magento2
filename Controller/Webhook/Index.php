@@ -137,13 +137,15 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
         return null;
     }
 
-    public function createCsrfValidationException(RequestInterface $_request): ?InvalidRequestException
+    public function createCsrfValidationException(RequestInterface $request): ?InvalidRequestException
     {
+        unset($request);
         return null;
     }
 
-    public function validateForCsrf(RequestInterface $_request): ?bool
+    public function validateForCsrf(RequestInterface $request): ?bool
     {
+        unset($request);
         return true;
     }
 }
