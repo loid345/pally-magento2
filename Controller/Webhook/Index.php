@@ -10,6 +10,7 @@ use Magento\Framework\App\Request\InvalidRequestException;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Controller\ResultInterface;
+use Magento\Sales\Model\Order;
 use Magento\Sales\Model\ResourceModel\Order\CollectionFactory as OrderCollectionFactory;
 use Pally\Payment\Model\Webhook\Processor;
 use Pally\Payment\Model\Webhook\SignatureVerifier;
@@ -104,7 +105,7 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
         return null;
     }
 
-    private function findOrderByIncrementId(string $incrementId): ?\Magento\Sales\Model\Order
+    private function findOrderByIncrementId(string $incrementId): ?Order
     {
         $collection = $this->orderCollectionFactory->create();
         $collection->addFieldToFilter('increment_id', $incrementId);
@@ -118,7 +119,7 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
         return null;
     }
 
-    private function findOrderByBillId(string $billId): ?\Magento\Sales\Model\Order
+    private function findOrderByBillId(string $billId): ?Order
     {
         $collection = $this->orderCollectionFactory->create();
         $collection->join(

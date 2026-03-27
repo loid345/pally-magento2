@@ -26,9 +26,7 @@ class BillCreateValidator extends AbstractValidator
         if (isset($response['success']) && $response['success'] === false) {
             $errorMessages[] = __('Payment service rejected the request.');
             $errorCodes[] = 'API_ERROR';
-        }
-
-        if (empty($response['bill_id']) || empty($response['link_page_url'])) {
+        } elseif (empty($response['bill_id']) || empty($response['link_page_url'])) {
             $errorMessages[] = __('Invalid response from payment service. Missing bill_id or link_page_url.');
             $errorCodes[] = 'INVALID_RESPONSE';
         }

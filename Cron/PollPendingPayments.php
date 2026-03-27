@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Pally\Payment\Cron;
 
 use DateTime;
+use DateTimeZone;
 use Magento\Sales\Model\Order;
+use Magento\Sales\Model\Order\Payment;
 use Magento\Sales\Model\ResourceModel\Order\CollectionFactory as OrderCollectionFactory;
 use Pally\Payment\Gateway\Http\Client\PaymentStatus;
 use Pally\Payment\Model\Ui\ConfigProvider;
@@ -35,7 +37,7 @@ class PollPendingPayments
         );
         $collection->addFieldToFilter('sop.method', ConfigProvider::CODE);
 
-        $threshold = new DateTime();
+        $threshold = new DateTime('now', new DateTimeZone('UTC'));
         $threshold->modify('-' . self::PENDING_THRESHOLD_MINUTES . ' minutes');
         $collection->addFieldToFilter('main_table.created_at', ['lteq' => $threshold->format('Y-m-d H:i:s')]);
 
@@ -93,7 +95,7 @@ class PollPendingPayments
     /**
      * @return array{status: string, trs_id: string}
      */
-    private function resolveStatusData(Order $order, \Magento\Sales\Model\Order\Payment $payment): array
+    private function resolveStatusData(Order $order, Payment $payment): array
     {
         $trsId = (string) $payment->getAdditionalInformation('pally_trs_id');
         $billId = (string) $payment->getAdditionalInformation('bill_id');
@@ -130,7 +132,7 @@ class PollPendingPayments
      */
     private function fetchBillStatus(
         Order $order,
-        \Magento\Sales\Model\Order\Payment $payment,
+        Payment $payment,
         string $billId,
         string $trsId,
         int $storeId

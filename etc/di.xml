@@ -85,6 +85,13 @@
         </arguments>
     </type>
 
+    <!-- Webhook Controller -->
+    <type name="Pally\Payment\Controller\Webhook\Index">
+        <arguments>
+            <argument name="logger" xsi:type="object">PallyPaymentLogger</argument>
+        </arguments>
+    </type>
+
     <!-- Cron -->
     <type name="Pally\Payment\Cron\PollPendingPayments">
         <arguments>

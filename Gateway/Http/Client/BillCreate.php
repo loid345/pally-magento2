@@ -42,7 +42,7 @@ class BillCreate implements ClientInterface
             ]);
         }
 
-        $this->curl->post($apiUrl, http_build_query($body));
+        $this->curl->post($apiUrl, $body);
 
         $status = $this->curl->getStatus();
         $responseBody = $this->curl->getBody();
