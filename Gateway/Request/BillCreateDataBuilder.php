@@ -38,6 +38,7 @@ class BillCreateDataBuilder implements BuilderInterface
             'payer_pays_commission' => '0',
             'success_url' => $baseUrl . '/pally/return/success',
             'fail_url' => $baseUrl . '/pally/return/fail',
+            'shop_url' => $baseUrl . '/',
         ];
     }
 }
