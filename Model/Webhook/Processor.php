@@ -27,81 +27,136 @@ class Processor
 
     public function process(array $webhookData): void
     {
-        $custom = $webhookData['custom'] ?? '';
-        $invId = $webhookData['InvId'] ?? '';
+        $custom = (string) ($webhookData['custom'] ?? '');
+        $invId = (string) ($webhookData['InvId'] ?? '');
         $pallyStatus = strtoupper((string) ($webhookData['Status'] ?? ''));
         $trsId = (string) ($webhookData['TrsId'] ?? '');
 
         $order = $this->findOrder($custom, $invId);
-        if (!$order) {
-            $this->logger->warning('Pally webhook: order not found', [
-                'custom' => $custom,
-                'InvId' => $invId,
-            ]);
+        if ($order === null) {
+            $this->logOrderNotFound($custom, $invId);
             return;
         }
 
-        // Idempotency: skip if already processed with this TrsId
         $payment = $order->getPayment();
-        $processedTrsId = $payment->getAdditionalInformation('pally_trs_id');
-        $currentPallyStatus = $payment->getAdditionalInformation('pally_status');
-
-        if ($processedTrsId === $trsId && $this->stateMachine->isFinalStatus((string) $currentPallyStatus)) {
-            $this->logger->info('Pally webhook: duplicate, skipping', [
+        if ($payment === null) {
+            $this->logger->warning('Pally webhook: order has no payment entity', [
                 'order' => $order->getIncrementId(),
-                'TrsId' => $trsId,
             ]);
             return;
         }
 
-        // Don't update if order is already in a final state
-        if (in_array($order->getState(), [Order::STATE_COMPLETE, Order::STATE_CLOSED], true)) {
-            $this->logger->info('Pally webhook: order already in final state', [
-                'order' => $order->getIncrementId(),
-                'state' => $order->getState(),
-            ]);
+        if ($this->isDuplicateFinalEvent($order, $payment, $trsId)) {
             return;
         }
 
-        // Save payment info
-        $payment->setAdditionalInformation('pally_status', $pallyStatus);
-        if ($trsId) {
-            $payment->setAdditionalInformation('pally_trs_id', $trsId);
-        }
-        if (!empty($webhookData['AccountType'])) {
-            $payment->setAdditionalInformation('pally_account_type', $webhookData['AccountType']);
-        }
-        if (!empty($webhookData['OutSum'])) {
-            $payment->setAdditionalInformation('pally_out_sum', $webhookData['OutSum']);
-        }
-        if (!empty($webhookData['Commission'])) {
-            $payment->setAdditionalInformation('pally_commission', $webhookData['Commission']);
+        if ($this->isMagentoFinalState($order)) {
+            return;
         }
 
-        $stateInfo = $this->stateMachine->getMagentoState($pallyStatus);
-
-        if ($pallyStatus === PaymentStateMachine::PALLY_STATUS_SUCCESS
-            || $pallyStatus === PaymentStateMachine::PALLY_STATUS_OVERPAID
-        ) {
-            $this->handleSuccess($order, $trsId);
-        } elseif ($pallyStatus === PaymentStateMachine::PALLY_STATUS_FAIL) {
-            $this->handleFail($order);
-        } elseif ($pallyStatus === PaymentStateMachine::PALLY_STATUS_UNDERPAID) {
-            $this->handleUnderpaid($order);
-        } else {
-            $order->setState($stateInfo['state']);
-            $order->setStatus($stateInfo['status']);
-            $order->addCommentToStatusHistory(
-                __('Pally payment status: %1', $pallyStatus)->render()
-            );
-            $this->orderRepository->save($order);
-        }
+        $this->savePaymentMetadata($payment, $webhookData, $pallyStatus, $trsId);
+        $this->applyPallyStatus($order, $pallyStatus, $trsId);
 
         $this->logger->info('Pally webhook: processed', [
             'order' => $order->getIncrementId(),
             'status' => $pallyStatus,
             'TrsId' => $trsId,
         ]);
+    }
+
+    private function logOrderNotFound(string $custom, string $invId): void
+    {
+        $this->logger->warning('Pally webhook: order not found', [
+            'custom' => $custom,
+            'InvId' => $invId,
+        ]);
+    }
+
+    private function isDuplicateFinalEvent(Order $order, \Magento\Sales\Model\Order\Payment $payment, string $trsId): bool
+    {
+        $processedTrsId = (string) $payment->getAdditionalInformation('pally_trs_id');
+        $currentPallyStatus = (string) $payment->getAdditionalInformation('pally_status');
+        if ($processedTrsId !== $trsId || !$this->stateMachine->isFinalStatus($currentPallyStatus)) {
+            return false;
+        }
+
+        $this->logger->info('Pally webhook: duplicate, skipping', [
+            'order' => $order->getIncrementId(),
+            'TrsId' => $trsId,
+        ]);
+
+        return true;
+    }
+
+    private function isMagentoFinalState(Order $order): bool
+    {
+        if (!in_array($order->getState(), [Order::STATE_COMPLETE, Order::STATE_CLOSED], true)) {
+            return false;
+        }
+
+        $this->logger->info('Pally webhook: order already in final state', [
+            'order' => $order->getIncrementId(),
+            'state' => $order->getState(),
+        ]);
+
+        return true;
+    }
+
+    private function savePaymentMetadata(
+        \Magento\Sales\Model\Order\Payment $payment,
+        array $webhookData,
+        string $pallyStatus,
+        string $trsId
+    ): void {
+        $payment->setAdditionalInformation('pally_status', $pallyStatus);
+
+        if ($trsId !== '') {
+            $payment->setAdditionalInformation('pally_trs_id', $trsId);
+        }
+
+        $this->setAdditionalInformationIfNotEmpty($payment, 'pally_account_type', $webhookData['AccountType'] ?? '');
+        $this->setAdditionalInformationIfNotEmpty($payment, 'pally_out_sum', $webhookData['OutSum'] ?? '');
+        $this->setAdditionalInformationIfNotEmpty($payment, 'pally_commission', $webhookData['Commission'] ?? '');
+    }
+
+    private function setAdditionalInformationIfNotEmpty(
+        \Magento\Sales\Model\Order\Payment $payment,
+        string $key,
+        mixed $value
+    ): void {
+        if ($value === '' || $value === null) {
+            return;
+        }
+
+        $payment->setAdditionalInformation($key, $value);
+    }
+
+    private function applyPallyStatus(Order $order, string $pallyStatus, string $trsId): void
+    {
+        if ($pallyStatus === PaymentStateMachine::PALLY_STATUS_SUCCESS
+            || $pallyStatus === PaymentStateMachine::PALLY_STATUS_OVERPAID
+        ) {
+            $this->handleSuccess($order, $trsId);
+            return;
+        }
+
+        if ($pallyStatus === PaymentStateMachine::PALLY_STATUS_FAIL) {
+            $this->handleFail($order);
+            return;
+        }
+
+        if ($pallyStatus === PaymentStateMachine::PALLY_STATUS_UNDERPAID) {
+            $this->handleUnderpaid($order);
+            return;
+        }
+
+        $stateInfo = $this->stateMachine->getMagentoState($pallyStatus);
+        $order->setState($stateInfo['state']);
+        $order->setStatus($stateInfo['status']);
+        $order->addCommentToStatusHistory(
+            __('Pally payment status: %1', $pallyStatus)->render()
+        );
+        $this->orderRepository->save($order);
     }
 
     private function handleSuccess(Order $order, string $trsId): void
@@ -115,7 +170,9 @@ class Processor
         }
 
         $payment = $order->getPayment();
-        $payment->setTransactionId($trsId);
+        if ($trsId !== '') {
+            $payment->setTransactionId($trsId);
+        }
         $payment->setIsTransactionClosed(true);
         $payment->setIsTransactionPending(false);
 
@@ -160,29 +217,56 @@ class Processor
     {
         // Primary lookup by custom (order increment_id)
         if ($custom !== '') {
-            $collection = $this->orderCollectionFactory->create();
-            $collection->addFieldToFilter('increment_id', $custom);
-            $collection->setPageSize(1);
-            $order = $collection->getFirstItem();
-            if ($order && $order->getId()) {
+            $order = $this->findOrderByIncrementId($custom);
+            if ($order !== null) {
                 return $order;
             }
         }
 
-        // Fallback: search by bill_id in payment additional_information
+        // Fallback: use InvId as order increment_id according to API callback contract.
         if ($invId !== '') {
-            $collection = $this->orderCollectionFactory->create();
-            $collection->join(
-                ['sop' => 'sales_order_payment'],
-                'main_table.entity_id = sop.parent_id',
-                []
-            );
-            $collection->addFieldToFilter('sop.additional_information', ['like' => '%' . $invId . '%']);
-            $collection->setPageSize(1);
-            $order = $collection->getFirstItem();
-            if ($order && $order->getId()) {
+            $order = $this->findOrderByIncrementId($invId);
+            if ($order !== null) {
                 return $order;
             }
+
+            $order = $this->findOrderByBillId($invId);
+            if ($order !== null) {
+                return $order;
+            }
+        }
+
+        return null;
+    }
+
+    private function findOrderByIncrementId(string $incrementId): ?Order
+    {
+        $collection = $this->orderCollectionFactory->create();
+        $collection->addFieldToFilter('increment_id', $incrementId);
+        $collection->setPageSize(1);
+        $order = $collection->getFirstItem();
+
+        if ($order && $order->getId()) {
+            return $order;
+        }
+
+        return null;
+    }
+
+    private function findOrderByBillId(string $billId): ?Order
+    {
+        $collection = $this->orderCollectionFactory->create();
+        $collection->join(
+            ['sop' => 'sales_order_payment'],
+            'main_table.entity_id = sop.parent_id',
+            []
+        );
+        $collection->addFieldToFilter('sop.additional_information', ['like' => '%' . $billId . '%']);
+        $collection->setPageSize(1);
+        $order = $collection->getFirstItem();
+
+        if ($order && $order->getId()) {
+            return $order;
         }
 
         return null;
