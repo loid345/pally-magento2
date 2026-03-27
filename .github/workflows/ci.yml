@@ -12,6 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
       - name: Validate composer.json
         run: composer validate --strict --no-check-lock
 
@@ -44,7 +48,7 @@ jobs:
           composer global require squizlabs/php_codesniffer magento/magento-coding-standard
       - name: Run PHPCS with Magento2 standard
         run: |
-          ~/.composer/vendor/bin/phpcs \
+          "$(composer global config home)/vendor/bin/phpcs" \
             --standard=Magento2 \
             --extensions=php,phtml \
             --ignore=vendor/ \
@@ -67,7 +71,7 @@ jobs:
       - name: Install PHPStan
         run: composer global require phpstan/phpstan phpstan/extension-installer
       - name: Run PHPStan
-        run: ~/.composer/vendor/bin/phpstan analyse -c phpstan.neon --no-progress --error-format=github
+        run: "$(composer global config home)/vendor/bin/phpstan" analyse -c phpstan.neon --no-progress --error-format=github
 
   phpmd:
     name: PHP Mess Detector
@@ -216,7 +220,7 @@ jobs:
           composer global require phpcompatibility/php-compatibility squizlabs/php_codesniffer
       - name: Run PHP Compatibility check for 8.3+
         run: |
-          ~/.composer/vendor/bin/phpcs \
+          "$(composer global config home)/vendor/bin/phpcs" \
             --standard=PHPCompatibility \
             --runtime-set testVersion 8.3- \
             --extensions=php \

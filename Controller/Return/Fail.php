@@ -9,7 +9,6 @@ use Magento\Framework\App\Action\HttpGetActionInterface;
 use Magento\Framework\Controller\Result\RedirectFactory;
 use Magento\Framework\Controller\ResultInterface;
 use Magento\Framework\Message\ManagerInterface;
-use Magento\Sales\Api\OrderManagementInterface;
 use Magento\Sales\Model\Order;
 
 class Fail implements HttpGetActionInterface
@@ -17,8 +16,7 @@ class Fail implements HttpGetActionInterface
     public function __construct(
         private readonly CheckoutSession $checkoutSession,
         private readonly RedirectFactory $redirectFactory,
-        private readonly ManagerInterface $messageManager,
-        private readonly OrderManagementInterface $orderManagement
+        private readonly ManagerInterface $messageManager
     ) {
     }
 
