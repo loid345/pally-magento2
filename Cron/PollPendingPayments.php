@@ -106,7 +106,7 @@ class PollPendingPayments
             return ['status' => $paymentStatus, 'trs_id' => $trsId];
         }
 
-        return $this->fetchBillStatus($order, $payment, $billId, $trsId, $storeId);
+        return $this->fetchBillStatus($order, $billId, $trsId, $storeId);
     }
 
     private function fetchPaymentStatus(Order $order, string $trsId, int $storeId): string
@@ -132,7 +132,6 @@ class PollPendingPayments
      */
     private function fetchBillStatus(
         Order $order,
-        Payment $payment,
         string $billId,
         string $trsId,
         int $storeId
@@ -153,7 +152,6 @@ class PollPendingPayments
         $resolvedTrsId = $trsId;
         if ($resolvedTrsId === '' && !empty($response['TrsId'])) {
             $resolvedTrsId = (string) $response['TrsId'];
-            $payment->setAdditionalInformation('pally_trs_id', $resolvedTrsId);
         }
 
         return [

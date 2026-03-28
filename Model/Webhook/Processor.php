@@ -262,7 +262,8 @@ class Processor
             'main_table.entity_id = sop.parent_id',
             []
         );
-        $collection->addFieldToFilter('sop.additional_information', ['like' => '%' . $billId . '%']);
+        $escapedBillId = str_replace(['%', '_'], ['\\%', '\\_'], $billId);
+        $collection->addFieldToFilter('sop.additional_information', ['like' => '%' . $escapedBillId . '%']);
         $collection->setPageSize(1);
         $order = $collection->getFirstItem();
 
