@@ -47,7 +47,7 @@ class Processor
             return;
         }
 
-        if ($this->isDuplicateFinalEvent($order, $payment, $trsId)) {
+        if ($this->isDuplicateFinalEvent($order, $payment)) {
             return;
         }
 
@@ -73,17 +73,16 @@ class Processor
         ]);
     }
 
-    private function isDuplicateFinalEvent(Order $order, Payment $payment, string $trsId): bool
+    private function isDuplicateFinalEvent(Order $order, Payment $payment): bool
     {
-        $processedTrsId = (string) $payment->getAdditionalInformation('pally_trs_id');
         $currentPallyStatus = (string) $payment->getAdditionalInformation('pally_status');
-        if ($processedTrsId !== $trsId || !$this->stateMachine->isFinalStatus($currentPallyStatus)) {
+        if (!$this->stateMachine->isFinalStatus($currentPallyStatus)) {
             return false;
         }
 
-        $this->logger->info('Pally webhook: duplicate, skipping', [
-            'order' => $order->getIncrementId(),
-            'TrsId' => $trsId,
+        $this->logger->info('Pally webhook: already in final Pally status, skipping', [
+            'order'          => $order->getIncrementId(),
+            'current_status' => $currentPallyStatus,
         ]);
 
         return true;
@@ -199,8 +198,12 @@ class Processor
             $order->addCommentToStatusHistory(
                 __('Pally: payment underpaid. Order placed on hold for manual review.')->render()
             );
-            $this->orderRepository->save($order);
+        } else {
+            $order->addCommentToStatusHistory(
+                __('Pally: payment underpaid.')->render()
+            );
         }
+        $this->orderRepository->save($order);
     }
 
     private function handleFail(Order $order): void
@@ -210,8 +213,12 @@ class Processor
             $order->addCommentToStatusHistory(
                 __('Payment failed via Pally. Order cancelled.')->render()
             );
-            $this->orderRepository->save($order);
+        } else {
+            $order->addCommentToStatusHistory(
+                __('Payment failed via Pally.')->render()
+            );
         }
+        $this->orderRepository->save($order);
     }
 
     private function findOrder(string $custom, string $invId): ?Order

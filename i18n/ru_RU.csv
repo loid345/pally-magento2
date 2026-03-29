@@ -38,3 +38,5 @@
 "Payment redirect URL is not available. Please try again.","URL перенаправления для оплаты недоступен. Пожалуйста, попробуйте снова."
 "Payment service returned invalid response.","Сервис оплаты вернул некорректный ответ."
 "Payment service rejected the request.","Сервис оплаты отклонил запрос."
+"Payment failed via Pally.","Оплата через Pally не удалась."
+"Pally: payment underpaid.","Pally: недоплата."

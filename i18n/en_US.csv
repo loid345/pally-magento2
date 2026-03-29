@@ -38,3 +38,5 @@
 "Payment redirect URL is not available. Please try again.","Payment redirect URL is not available. Please try again."
 "Payment service returned invalid response.","Payment service returned invalid response."
 "Payment service rejected the request.","Payment service rejected the request."
+"Payment failed via Pally.","Payment failed via Pally."
+"Pally: payment underpaid.","Pally: payment underpaid."
