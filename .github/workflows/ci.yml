@@ -74,10 +74,6 @@ jobs:
           composer global require phpstan/phpstan phpstan/extension-installer
       - name: Run PHPStan
         run: |
-          if [ ! -d "vendor/magento" ]; then
-            echo "Magento dependencies are not installed in this repository checkout; skipping PHPStan."
-            exit 0
-          fi
           PHPSTAN_BIN="$(composer global config home)/vendor/bin/phpstan"
           "$PHPSTAN_BIN" analyse -c phpstan.neon --no-progress --error-format=github
 
@@ -252,8 +248,8 @@ jobs:
           done
       - name: Check translation completeness
         run: |
-          EN_COUNT=$(wc -l < i18n/en_US.csv)
-          RU_COUNT=$(wc -l < i18n/ru_RU.csv)
+          EN_COUNT=$(grep -c '' i18n/en_US.csv)
+          RU_COUNT=$(grep -c '' i18n/ru_RU.csv)
           echo "EN strings: $EN_COUNT, RU strings: $RU_COUNT"
           if [ "$EN_COUNT" -ne "$RU_COUNT" ]; then
             echo "::error::Translation files have different number of strings (EN: $EN_COUNT, RU: $RU_COUNT)"
@@ -274,9 +270,11 @@ jobs:
       - name: Check for untranslated PHP strings
         run: |
           echo "Checking for __() calls with translatable strings..."
-          # Extract translatable strings from PHP files
-          grep -roh --include='*.php' "__('[^']*')" . --exclude-dir=vendor | \
-            sed "s/__('//;s/')//" | sort -u > /tmp/php_strings.txt
+          # Extract translatable strings from PHP files (single and double quotes)
+          {
+            grep -roh --include='*.php' "__('[^']*')" . --exclude-dir=vendor | sed "s/__('//;s/')//"
+            grep -roh --include='*.php' '__("[^"]*")' . --exclude-dir=vendor | sed 's/__("//;s/")//'
+          } | sort -u > /tmp/php_strings.txt
 
           echo "Found $(wc -l < /tmp/php_strings.txt) translatable strings in PHP files"
 
@@ -334,7 +332,7 @@ jobs:
           echo "Checking DI references..."
           # Extract class references from di.xml and verify files exist
           ERRORS=0
-          for class in $(grep -oP 'Pally\\Payment\\[A-Za-z\\]+' etc/di.xml | sort -u); do
+          for class in $(grep -roh --include='di.xml' -P 'Pally\\Payment\\[A-Za-z\\]+' etc/ | sort -u); do
             filepath=$(echo "$class" | sed 's|Pally\\Payment\\||;s|\\|/|g').php
             if [ ! -f "$filepath" ]; then
               echo "::error::Class referenced in di.xml not found: $class (expected at $filepath)"
@@ -366,12 +364,12 @@ jobs:
       - name: Check strict types declaration
         run: |
           ERRORS=0
-          for f in $(find . -name '*.php' -not -path './vendor/*'); do
-            if ! head -5 "$f" | grep -q 'declare(strict_types=1)'; then
+          while IFS= read -r -d '' f; do
+            if ! grep -q 'declare(strict_types=1)' "$f"; then
               echo "::error file=$f::Missing declare(strict_types=1)"
               ERRORS=$((ERRORS+1))
             fi
-          done
+          done < <(find . -name '*.php' -not -path './vendor/*' -print0)
           if [ "$ERRORS" -gt 0 ]; then
             exit 1
           fi
@@ -380,12 +378,12 @@ jobs:
       - name: Check namespace declarations
         run: |
           ERRORS=0
-          for f in $(find . -name '*.php' -not -path './vendor/*' -not -name 'registration.php'); do
+          while IFS= read -r -d '' f; do
             if ! grep -q '^namespace Pally\\Payment' "$f"; then
               echo "::error file=$f::Missing or incorrect namespace"
               ERRORS=$((ERRORS+1))
             fi
-          done
+          done < <(find . -name '*.php' -not -path './vendor/*' -not -name 'registration.php' -print0)
           if [ "$ERRORS" -gt 0 ]; then
             exit 1
           fi
