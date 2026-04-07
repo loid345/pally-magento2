@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         bootstrap="Test/Bootstrap.php"
+         colors="true"
+         failOnRisky="true"
+         failOnWarning="true"
+         cacheDirectory=".phpunit.cache">
+    <testsuites>
+        <testsuite name="Pally_Payment unit">
+            <directory>Test/Unit</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory suffix=".php">Controller</directory>
+            <directory suffix=".php">Cron</directory>
+            <directory suffix=".php">Gateway</directory>
+            <directory suffix=".php">Model</directory>
+        </include>
+        <exclude>
+            <directory>Test</directory>
+            <directory>vendor</directory>
+        </exclude>
+    </source>
+</phpunit>
