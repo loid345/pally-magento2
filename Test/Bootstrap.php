@@ -27,18 +27,10 @@ spl_autoload_register(static function (string $class): void {
     }
 });
 
-if (!class_exists(\Magento\Sales\Model\Order::class, false)) {
-    eval(
-        'namespace Magento\\Sales\\Model;'
-        . ' class Order {'
-        . '     public const STATE_NEW = "new";'
-        . '     public const STATE_PENDING_PAYMENT = "pending_payment";'
-        . '     public const STATE_PROCESSING = "processing";'
-        . '     public const STATE_COMPLETE = "complete";'
-        . '     public const STATE_CLOSED = "closed";'
-        . '     public const STATE_CANCELED = "canceled";'
-        . '     public const STATE_HOLDED = "holded";'
-        . '     public const STATE_PAYMENT_REVIEW = "payment_review";'
-        . ' }'
-    );
+// Stand-in for Magento\Sales\Model\Order — only loaded when the real Magento
+// class is not autoloadable in this environment. Test/_stub is intentionally
+// kept outside the Test/Unit tree so PHPUnit and the CI checks don't pick it
+// up as a test or production source file.
+if (!class_exists(\Magento\Sales\Model\Order::class)) {
+    require_once __DIR__ . '/_stub/Magento/Sales/Model/Order.php';
 }
