@@ -25,8 +25,9 @@ class BillCreateDataBuilder implements BuilderInterface
 
         $store = $this->storeManager->getStore($storeId);
         $baseUrl = rtrim((string) $store->getBaseUrl(), '/');
+        $currency = (string) $order->getCurrencyCode();
 
-        return [
+        $request = [
             '__store_id' => $storeId,
             'shop_id' => $this->config->getShopId($storeId),
             'order_id' => $order->getOrderIncrementId(),
@@ -40,5 +41,11 @@ class BillCreateDataBuilder implements BuilderInterface
             'fail_url' => $baseUrl . '/pally/callback/fail',
             'shop_url' => $baseUrl . '/',
         ];
+
+        if ($currency !== '') {
+            $request['currency_in'] = $currency;
+        }
+
+        return $request;
     }
 }

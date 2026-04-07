@@ -32,6 +32,7 @@ class Processor
         $invId = (string) ($webhookData['InvId'] ?? '');
         $pallyStatus = strtoupper((string) ($webhookData['Status'] ?? ''));
         $trsId = (string) ($webhookData['TrsId'] ?? '');
+        $outSum = (string) ($webhookData['OutSum'] ?? '');
 
         $order = $this->findOrder($custom, $invId);
         if ($order === null) {
@@ -52,6 +53,27 @@ class Processor
         }
 
         if ($this->isMagentoFinalState($order)) {
+            return;
+        }
+
+        // For positive payment outcomes, the reported amount must match the order total.
+        // UNDERPAID/OVERPAID legitimately differ and are handled separately.
+        if ($outSum !== ''
+            && in_array($pallyStatus, [PaymentStateMachine::PALLY_STATUS_SUCCESS], true)
+            && !$this->isAmountMatching($order, $outSum)
+        ) {
+            $this->logger->error('Pally webhook: SUCCESS amount mismatch', [
+                'order' => $order->getIncrementId(),
+                'expected' => $order->getGrandTotal(),
+                'received' => $outSum,
+            ]);
+            $order->addCommentToStatusHistory(
+                __('Pally webhook rejected: amount mismatch (expected %1, received %2).',
+                    (string) $order->getGrandTotal(),
+                    $outSum
+                )->render()
+            );
+            $this->orderRepository->save($order);
             return;
         }
 
@@ -90,7 +112,11 @@ class Processor
 
     private function isMagentoFinalState(Order $order): bool
     {
-        if (!in_array($order->getState(), [Order::STATE_COMPLETE, Order::STATE_CLOSED], true)) {
+        if (!in_array(
+            $order->getState(),
+            [Order::STATE_COMPLETE, Order::STATE_CLOSED, Order::STATE_CANCELED],
+            true
+        )) {
             return false;
         }
 
@@ -219,6 +245,14 @@ class Processor
             );
         }
         $this->orderRepository->save($order);
+    }
+
+    private function isAmountMatching(Order $order, string $outSum): bool
+    {
+        $expected = (float) $order->getGrandTotal();
+        $received = (float) $outSum;
+
+        return abs($expected - $received) < 0.01;
     }
 
     private function findOrder(string $custom, string $invId): ?Order

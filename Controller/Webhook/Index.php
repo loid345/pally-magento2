@@ -75,7 +75,8 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
                 'InvId' => $invId,
                 'custom' => $custom,
             ]);
-            return $result->setHttpResponseCode(200)->setData(['ok' => true]);
+            // Return 500 so Pally retries the webhook delivery instead of marking it delivered.
+            return $result->setHttpResponseCode(500)->setData(['ok' => false, 'error' => 'processing_error']);
         }
 
         return $result->setHttpResponseCode(200)->setData(['ok' => true]);
