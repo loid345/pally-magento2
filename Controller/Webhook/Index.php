@@ -41,8 +41,13 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
         $accountType = (string) $this->request->getParam('AccountType', '');
         $commission = (string) $this->request->getParam('Commission', '');
 
-        if ($invId === '' || $outSum === '' || $signatureValue === '') {
-            $this->logger->warning('Pally webhook: missing required parameters');
+        if ($invId === '' || $outSum === '' || $signatureValue === '' || $status === '') {
+            $this->logger->warning('Pally webhook: missing required parameters', [
+                'has_InvId' => $invId !== '',
+                'has_OutSum' => $outSum !== '',
+                'has_SignatureValue' => $signatureValue !== '',
+                'has_Status' => $status !== '',
+            ]);
             return $result->setHttpResponseCode(400)->setData(['ok' => false, 'error' => 'bad_request']);
         }
 

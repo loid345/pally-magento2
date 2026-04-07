@@ -17,6 +17,8 @@ use Psr\Log\LoggerInterface;
 class PollPendingPayments
 {
     private const PENDING_THRESHOLD_MINUTES = 10;
+    private const PAGE_SIZE = 50;
+    private const MAX_ORDERS_PER_RUN = 500;
 
     public function __construct(
         private readonly OrderCollectionFactory $orderCollectionFactory,
@@ -28,31 +30,49 @@ class PollPendingPayments
 
     public function execute(): void
     {
-        $collection = $this->orderCollectionFactory->create();
-        $collection->addFieldToFilter('state', Order::STATE_PENDING_PAYMENT);
-        $collection->join(
-            ['sop' => 'sales_order_payment'],
-            'main_table.entity_id = sop.parent_id',
-            ['method']
-        );
-        $collection->addFieldToFilter('sop.method', ConfigProvider::CODE);
-
         $threshold = new DateTime('now', new DateTimeZone('UTC'));
         $threshold->modify('-' . self::PENDING_THRESHOLD_MINUTES . ' minutes');
-        $collection->addFieldToFilter('main_table.created_at', ['lteq' => $threshold->format('Y-m-d H:i:s')]);
+        $thresholdString = $threshold->format('Y-m-d H:i:s');
 
-        $collection->setPageSize(50);
+        $processed = 0;
+        $seenIds = [];
 
-        foreach ($collection as $order) {
-            try {
-                $this->pollOrder($order);
-            } catch (\Exception $e) {
-                $this->logger->error('Pally cron: error polling order', [
-                    'order' => $order->getIncrementId(),
-                    'error' => $e->getMessage(),
-                ]);
+        do {
+            $collection = $this->orderCollectionFactory->create();
+            $collection->addFieldToFilter('state', Order::STATE_PENDING_PAYMENT);
+            $collection->join(
+                ['sop' => 'sales_order_payment'],
+                'main_table.entity_id = sop.parent_id',
+                ['method']
+            );
+            $collection->addFieldToFilter('sop.method', ConfigProvider::CODE);
+            $collection->addFieldToFilter('main_table.created_at', ['lteq' => $thresholdString]);
+            if ($seenIds !== []) {
+                $collection->addFieldToFilter('main_table.entity_id', ['nin' => $seenIds]);
             }
-        }
+            $collection->setOrder('main_table.created_at', 'ASC');
+            $collection->setPageSize(self::PAGE_SIZE);
+            $collection->setCurPage(1);
+
+            $itemsOnPage = 0;
+            foreach ($collection as $order) {
+                $itemsOnPage++;
+                $processed++;
+                $seenIds[] = (int) $order->getId();
+                try {
+                    $this->pollOrder($order);
+                } catch (\Exception $e) {
+                    $this->logger->error('Pally cron: error polling order', [
+                        'order' => $order->getIncrementId(),
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
+                if ($processed >= self::MAX_ORDERS_PER_RUN) {
+                    return;
+                }
+            }
+        } while ($itemsOnPage === self::PAGE_SIZE);
     }
 
     private function pollOrder(Order $order): void
