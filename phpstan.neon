@@ -1,11 +1,21 @@
 parameters:
   level: 6
   reportUnmatchedIgnoredErrors: false
+  bootstrapFiles:
+    - vendor/autoload.php
   paths:
-    - .
+    - Controller
+    - Cron
+    - Gateway
+    - Model
   excludePaths:
     analyseAndScan:
-      - vendor (?)
+      - vendor
+      - Test
   ignoreErrors:
+    # Magento\Framework\App\RequestInterface lacks declared accessor methods such as getParam().
     - '#Call to an undefined method Magento\\Framework\\App\\RequestInterface::#'
+    # Sales order collection exposes Zend_Db_Select join() at runtime, but not via a typed method.
     - '#Call to an undefined method Magento\\Sales\\Model\\ResourceModel\\Order\\Collection::join\(\)#'
+    # CollectionFactory::create() returns the parent collection type; sales order specifics are dynamic.
+    - '#Call to an undefined method Magento\\Sales\\Model\\ResourceModel\\Order\\Collection::addFieldToFilter\(\)#'
