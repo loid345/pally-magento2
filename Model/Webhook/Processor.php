@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Pally\Payment\Model\Webhook;
 
-use Magento\Framework\DB\Transaction;
+use Magento\Framework\DB\TransactionFactory;
 use Magento\Framework\Lock\LockManagerInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
@@ -26,7 +26,7 @@ class Processor
         private readonly OrderCollectionFactory $orderCollectionFactory,
         private readonly OrderRepositoryInterface $orderRepository,
         private readonly InvoiceService $invoiceService,
-        private readonly Transaction $transaction,
+        private readonly TransactionFactory $transactionFactory,
         private readonly PaymentStateMachine $stateMachine,
         private readonly LockManagerInterface $lockManager,
         private readonly LoggerInterface $logger
@@ -71,7 +71,7 @@ class Processor
                 return;
             }
 
-            if ($this->isDuplicateFinalEvent($order, $payment)) {
+            if ($this->isDuplicateFinalEvent($order, $payment, $pallyStatus)) {
                 return;
             }
 
@@ -122,10 +122,33 @@ class Processor
         ]);
     }
 
-    private function isDuplicateFinalEvent(Order $order, Payment $payment): bool
+    private function isDuplicateFinalEvent(Order $order, Payment $payment, string $newStatus): bool
     {
         $currentPallyStatus = (string) $payment->getAdditionalInformation('pally_status');
         if (!$this->stateMachine->isFinalStatus($currentPallyStatus)) {
+            return false;
+        }
+
+        // Allow late-arriving positive outcomes to overwrite a prior negative
+        // final status (FAIL / UNDERPAID). This happens when Pally initially
+        // reports FAIL and later retries with SUCCESS/OVERPAID, or when a
+        // shopper underpays and then tops the bill up.
+        $negativeFinals = [
+            PaymentStateMachine::PALLY_STATUS_FAIL,
+            PaymentStateMachine::PALLY_STATUS_UNDERPAID,
+        ];
+        $positiveFinals = [
+            PaymentStateMachine::PALLY_STATUS_SUCCESS,
+            PaymentStateMachine::PALLY_STATUS_OVERPAID,
+        ];
+        if (in_array($currentPallyStatus, $negativeFinals, true)
+            && in_array($newStatus, $positiveFinals, true)
+        ) {
+            $this->logger->info('Pally webhook: upgrading negative final status to positive', [
+                'order'          => $order->getIncrementId(),
+                'current_status' => $currentPallyStatus,
+                'new_status'     => $newStatus,
+            ]);
             return false;
         }
 
@@ -229,20 +252,26 @@ class Processor
 
     private function handleSuccess(Order $order, string $trsId): void
     {
-        // Don't create invoice if already exists or can't be invoiced
+        $payment = $order->getPayment();
+        if ($payment !== null) {
+            if ($trsId !== '') {
+                $payment->setTransactionId($trsId);
+            }
+            $payment->setIsTransactionClosed(true);
+            $payment->setIsTransactionPending(false);
+        }
+
+        // Don't create invoice if already exists or can't be invoiced;
+        // still persist the transaction flags set above.
         if ($order->hasInvoices() || !$order->canInvoice()) {
             $order->setState(Order::STATE_PROCESSING);
             $order->setStatus('processing');
+            $order->addCommentToStatusHistory(
+                __('Pally payment confirmed. Transaction ID: %1', $trsId)->render()
+            );
             $this->orderRepository->save($order);
             return;
         }
-
-        $payment = $order->getPayment();
-        if ($trsId !== '') {
-            $payment->setTransactionId($trsId);
-        }
-        $payment->setIsTransactionClosed(true);
-        $payment->setIsTransactionPending(false);
 
         $invoice = $this->invoiceService->prepareInvoice($order);
         $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
@@ -254,9 +283,13 @@ class Processor
             __('Pally payment confirmed. Transaction ID: %1', $trsId)->render()
         );
 
-        $this->transaction->addObject($invoice);
-        $this->transaction->addObject($order);
-        $this->transaction->save();
+        // Save invoice + order atomically using a fresh Transaction per call;
+        // sharing a single injected Transaction instance across webhook calls
+        // would accumulate stale objects.
+        $transaction = $this->transactionFactory->create();
+        $transaction->addObject($invoice);
+        $transaction->addObject($order);
+        $transaction->save();
     }
 
     private function handleUnderpaid(Order $order): void
