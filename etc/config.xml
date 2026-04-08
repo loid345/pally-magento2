@@ -23,7 +23,6 @@
                 <can_capture>0</can_capture>
                 <can_use_checkout>1</can_use_checkout>
                 <can_use_internal>0</can_use_internal>
-                <debugReplaceKeys>api_token,SignatureValue</debugReplaceKeys>
             </pally>
         </payment>
     </default>
