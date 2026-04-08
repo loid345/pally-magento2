@@ -40,6 +40,7 @@ class Processor
         $pallyStatus = strtoupper((string) ($webhookData['Status'] ?? ''));
         $trsId = (string) ($webhookData['TrsId'] ?? '');
         $outSum = (string) ($webhookData['OutSum'] ?? '');
+        $currencyIn = strtoupper((string) ($webhookData['CurrencyIn'] ?? ''));
 
         $order = $this->findOrder($custom, $invId);
         if ($order === null) {
@@ -95,6 +96,29 @@ class Processor
                         'Pally webhook rejected: amount mismatch (expected %1, received %2).',
                         (string) $order->getGrandTotal(),
                         $outSum
+                    )->render()
+                );
+                $this->orderRepository->save($order);
+                return;
+            }
+
+            // The amount check above is only meaningful if the currency matches.
+            // Pally guarantees CurrencyIn in every postback, so we can compare it
+            // against the order currency and reject the update if they disagree.
+            if ($currencyIn !== ''
+                && $pallyStatus === PaymentStateMachine::PALLY_STATUS_SUCCESS
+                && !$this->isCurrencyMatching($order, $currencyIn)
+            ) {
+                $this->logger->error('Pally webhook: SUCCESS currency mismatch', [
+                    'order' => $order->getIncrementId(),
+                    'expected' => $order->getOrderCurrencyCode(),
+                    'received' => $currencyIn,
+                ]);
+                $order->addCommentToStatusHistory(
+                    __(
+                        'Pally webhook rejected: currency mismatch (expected %1, received %2).',
+                        (string) $order->getOrderCurrencyCode(),
+                        $currencyIn
                     )->render()
                 );
                 $this->orderRepository->save($order);
@@ -324,10 +348,24 @@ class Processor
 
     private function isAmountMatching(Order $order, string $outSum): bool
     {
-        $expected = (float) $order->getGrandTotal();
-        $received = (float) $outSum;
+        // Use bccomp to avoid IEEE-754 rounding error on amounts with fractional
+        // parts (e.g. 199.99 vs. 199.989999 after repeated float arithmetic).
+        // We compare at two decimal places, mirroring bill/create's %.2f formatting.
+        $expected = sprintf('%.2f', (float) $order->getGrandTotal());
+        $received = sprintf('%.2f', (float) $outSum);
 
-        return abs($expected - $received) < 0.01;
+        return bccomp($expected, $received, 2) === 0;
+    }
+
+    private function isCurrencyMatching(Order $order, string $currencyIn): bool
+    {
+        $orderCurrency = strtoupper((string) $order->getOrderCurrencyCode());
+        if ($orderCurrency === '') {
+            // Some degenerate test orders have no currency set; don't block them.
+            return true;
+        }
+
+        return $orderCurrency === $currencyIn;
     }
 
     private function findOrder(string $custom, string $invId): ?Order
