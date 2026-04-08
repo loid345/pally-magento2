@@ -6,6 +6,7 @@ parameters:
   paths:
     - Controller
     - Cron
+    - Exception
     - Gateway
     - Model
   excludePaths:

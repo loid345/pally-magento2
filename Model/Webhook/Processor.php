@@ -12,6 +12,8 @@ use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Payment;
 use Magento\Sales\Model\ResourceModel\Order\CollectionFactory as OrderCollectionFactory;
 use Magento\Sales\Model\Service\InvoiceService;
+use Pally\Payment\Exception\WebhookLockException;
+use Pally\Payment\Exception\WebhookOrderNotFoundException;
 use Pally\Payment\Model\Order\PaymentStateMachine;
 use Psr\Log\LoggerInterface;
 
@@ -42,15 +44,19 @@ class Processor
         $order = $this->findOrder($custom, $invId);
         if ($order === null) {
             $this->logOrderNotFound($custom, $invId);
-            return;
+            throw new WebhookOrderNotFoundException(
+                sprintf('Pally webhook: order not found (custom=%s, InvId=%s)', $custom, $invId)
+            );
         }
 
         $lockName = self::LOCK_PREFIX . $order->getIncrementId();
         if (!$this->lockManager->lock($lockName, self::LOCK_TIMEOUT_SECONDS)) {
-            $this->logger->warning('Pally webhook: could not acquire lock, skipping', [
+            $this->logger->warning('Pally webhook: could not acquire lock', [
                 'order' => $order->getIncrementId(),
             ]);
-            return;
+            throw new WebhookLockException(
+                sprintf('Pally webhook: lock busy for order %s', $order->getIncrementId())
+            );
         }
 
         try {

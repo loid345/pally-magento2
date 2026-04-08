@@ -30,13 +30,33 @@ class Start implements HttpGetActionInterface
         }
 
         $payment = $order->getPayment();
-        $linkPageUrl = $payment?->getAdditionalInformation('link_page_url');
+        $linkPageUrl = (string) ($payment?->getAdditionalInformation('link_page_url') ?? '');
 
-        if (!$linkPageUrl) {
+        if ($linkPageUrl === '' || !$this->isSafePaymentUrl($linkPageUrl)) {
             $this->messageManager->addErrorMessage(__('Payment link not available. Please try again.'));
             return $redirect->setPath('checkout/cart');
         }
 
         return $redirect->setUrl($linkPageUrl);
+    }
+
+    /**
+     * Defence-in-depth check for the Pally-issued payment page URL before
+     * redirecting the customer. The value originates from a signed API
+     * response, but we still require an absolute https:// URL with a host
+     * to prevent any stored-URL tampering turning this controller into an
+     * open redirect.
+     */
+    private function isSafePaymentUrl(string $url): bool
+    {
+        $parts = parse_url($url);
+        if ($parts === false) {
+            return false;
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = (string) ($parts['host'] ?? '');
+
+        return $scheme === 'https' && $host !== '';
     }
 }
