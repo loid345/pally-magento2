@@ -37,10 +37,6 @@ class Processor
     {
         $custom = (string) ($webhookData['custom'] ?? '');
         $invId = (string) ($webhookData['InvId'] ?? '');
-        $pallyStatus = strtoupper((string) ($webhookData['Status'] ?? ''));
-        $trsId = (string) ($webhookData['TrsId'] ?? '');
-        $outSum = (string) ($webhookData['OutSum'] ?? '');
-        $currencyIn = strtoupper((string) ($webhookData['CurrencyIn'] ?? ''));
 
         $order = $this->findOrder($custom, $invId);
         if ($order === null) {
@@ -63,79 +59,99 @@ class Processor
         try {
             // Reload the order under the lock to get the freshest state.
             $order = $this->orderRepository->get((int) $order->getId());
-
-            $payment = $order->getPayment();
-            if ($payment === null) {
-                $this->logger->warning('Pally webhook: order has no payment entity', [
-                    'order' => $order->getIncrementId(),
-                ]);
-                return;
-            }
-
-            if ($this->isDuplicateFinalEvent($order, $payment, $pallyStatus)) {
-                return;
-            }
-
-            if ($this->isMagentoFinalState($order)) {
-                return;
-            }
-
-            // For positive payment outcomes, the reported amount must match the order total.
-            // UNDERPAID/OVERPAID legitimately differ and are handled separately.
-            if ($outSum !== ''
-                && $pallyStatus === PaymentStateMachine::PALLY_STATUS_SUCCESS
-                && !$this->isAmountMatching($order, $outSum)
-            ) {
-                $this->logger->error('Pally webhook: SUCCESS amount mismatch', [
-                    'order' => $order->getIncrementId(),
-                    'expected' => $order->getGrandTotal(),
-                    'received' => $outSum,
-                ]);
-                $order->addCommentToStatusHistory(
-                    __(
-                        'Pally webhook rejected: amount mismatch (expected %1, received %2).',
-                        (string) $order->getGrandTotal(),
-                        $outSum
-                    )->render()
-                );
-                $this->orderRepository->save($order);
-                return;
-            }
-
-            // The amount check above is only meaningful if the currency matches.
-            // Pally guarantees CurrencyIn in every postback, so we can compare it
-            // against the order currency and reject the update if they disagree.
-            if ($currencyIn !== ''
-                && $pallyStatus === PaymentStateMachine::PALLY_STATUS_SUCCESS
-                && !$this->isCurrencyMatching($order, $currencyIn)
-            ) {
-                $this->logger->error('Pally webhook: SUCCESS currency mismatch', [
-                    'order' => $order->getIncrementId(),
-                    'expected' => $order->getOrderCurrencyCode(),
-                    'received' => $currencyIn,
-                ]);
-                $order->addCommentToStatusHistory(
-                    __(
-                        'Pally webhook rejected: currency mismatch (expected %1, received %2).',
-                        (string) $order->getOrderCurrencyCode(),
-                        $currencyIn
-                    )->render()
-                );
-                $this->orderRepository->save($order);
-                return;
-            }
-
-            $this->savePaymentMetadata($payment, $webhookData, $pallyStatus, $trsId);
-            $this->applyPallyStatus($order, $pallyStatus, $trsId);
-
-            $this->logger->info('Pally webhook: processed', [
-                'order' => $order->getIncrementId(),
-                'status' => $pallyStatus,
-                'TrsId' => $trsId,
-            ]);
+            $this->processLocked($order, $webhookData);
         } finally {
             $this->lockManager->unlock($lockName);
         }
+    }
+
+    private function processLocked(Order $order, array $webhookData): void
+    {
+        $pallyStatus = strtoupper((string) ($webhookData['Status'] ?? ''));
+        $trsId = (string) ($webhookData['TrsId'] ?? '');
+
+        $payment = $order->getPayment();
+        if ($payment === null) {
+            $this->logger->warning('Pally webhook: order has no payment entity', [
+                'order' => $order->getIncrementId(),
+            ]);
+            return;
+        }
+
+        if ($this->isDuplicateFinalEvent($order, $payment, $pallyStatus)) {
+            return;
+        }
+
+        if ($this->isMagentoFinalState($order)) {
+            return;
+        }
+
+        if ($this->rejectIfMismatch($order, $webhookData, $pallyStatus)) {
+            return;
+        }
+
+        $this->savePaymentMetadata($payment, $webhookData, $pallyStatus, $trsId);
+        $this->applyPallyStatus($order, $pallyStatus, $trsId);
+
+        $this->logger->info('Pally webhook: processed', [
+            'order' => $order->getIncrementId(),
+            'status' => $pallyStatus,
+            'TrsId' => $trsId,
+        ]);
+    }
+
+    /**
+     * Reject the webhook with a status-history note if SUCCESS was reported but
+     * the amount or currency does not match the order. Returns true when the
+     * update was rejected (and the order was saved with the explanatory note),
+     * false otherwise.
+     */
+    private function rejectIfMismatch(Order $order, array $webhookData, string $pallyStatus): bool
+    {
+        if ($pallyStatus !== PaymentStateMachine::PALLY_STATUS_SUCCESS) {
+            return false;
+        }
+
+        $outSum = (string) ($webhookData['OutSum'] ?? '');
+        if ($outSum !== '' && !$this->isAmountMatching($order, $outSum)) {
+            $this->logger->error('Pally webhook: SUCCESS amount mismatch', [
+                'order' => $order->getIncrementId(),
+                'expected' => $order->getGrandTotal(),
+                'received' => $outSum,
+            ]);
+            $order->addCommentToStatusHistory(
+                __(
+                    'Pally webhook rejected: amount mismatch (expected %1, received %2).',
+                    (string) $order->getGrandTotal(),
+                    $outSum
+                )->render()
+            );
+            $this->orderRepository->save($order);
+            return true;
+        }
+
+        // The amount check above is only meaningful if the currency matches.
+        // Pally guarantees CurrencyIn in every postback, so we can compare it
+        // against the order currency and reject the update if they disagree.
+        $currencyIn = strtoupper((string) ($webhookData['CurrencyIn'] ?? ''));
+        if ($currencyIn !== '' && !$this->isCurrencyMatching($order, $currencyIn)) {
+            $this->logger->error('Pally webhook: SUCCESS currency mismatch', [
+                'order' => $order->getIncrementId(),
+                'expected' => $order->getOrderCurrencyCode(),
+                'received' => $currencyIn,
+            ]);
+            $order->addCommentToStatusHistory(
+                __(
+                    'Pally webhook rejected: currency mismatch (expected %1, received %2).',
+                    (string) $order->getOrderCurrencyCode(),
+                    $currencyIn
+                )->render()
+            );
+            $this->orderRepository->save($order);
+            return true;
+        }
+
+        return false;
     }
 
     private function logOrderNotFound(string $custom, string $invId): void

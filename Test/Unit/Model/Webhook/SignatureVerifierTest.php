@@ -8,7 +8,6 @@ use Pally\Payment\Gateway\Config\Config;
 use Pally\Payment\Model\Webhook\SignatureVerifier;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 
 class SignatureVerifierTest extends TestCase
 {
@@ -21,7 +20,7 @@ class SignatureVerifierTest extends TestCase
         $config = $this->createMock(Config::class);
         $config->method('getApiToken')->willReturn(self::TOKEN);
 
-        $this->verifier = new SignatureVerifier($config, new NullLogger());
+        $this->verifier = new SignatureVerifier($config, $this->createMock(LoggerInterface::class));
     }
 
     public function testEmptyApiTokenRejected(): void
