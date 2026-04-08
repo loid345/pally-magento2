@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Pally\Payment\Gateway\Http\Client;
 
-use Magento\Framework\HTTP\Client\Curl;
+use Magento\Framework\HTTP\Client\CurlFactory;
 use Magento\Payment\Gateway\Http\ClientException;
 use Magento\Payment\Gateway\Http\ClientInterface;
 use Magento\Payment\Gateway\Http\TransferInterface;
@@ -14,7 +14,7 @@ use Psr\Log\LoggerInterface;
 class BillCreate implements ClientInterface
 {
     public function __construct(
-        private readonly Curl $curl,
+        private readonly CurlFactory $curlFactory,
         private readonly Config $config,
         private readonly LoggerInterface $logger
     ) {
@@ -29,11 +29,14 @@ class BillCreate implements ClientInterface
         $apiUrl = $this->config->getApiUrl($storeId) . '/api/v1/bill/create';
         $apiToken = $this->config->getApiToken($storeId);
 
-        $this->curl->setHeaders([
+        // Always use a fresh Curl instance per request so we don't leak
+        // headers, cookies, or response state between concurrent calls.
+        $curl = $this->curlFactory->create();
+        $curl->setHeaders([
             'Authorization' => 'Bearer ' . $apiToken,
             'Content-Type' => 'application/x-www-form-urlencoded',
         ]);
-        $this->curl->setTimeout(15);
+        $curl->setTimeout(15);
 
         if ($this->config->isDebugMode($storeId)) {
             $this->logger->debug('Pally bill/create request', [
@@ -42,10 +45,10 @@ class BillCreate implements ClientInterface
             ]);
         }
 
-        $this->curl->post($apiUrl, $body);
+        $curl->post($apiUrl, $body);
 
-        $status = $this->curl->getStatus();
-        $responseBody = $this->curl->getBody();
+        $status = $curl->getStatus();
+        $responseBody = $curl->getBody();
 
         if ($this->config->isDebugMode($storeId)) {
             $this->logger->debug('Pally bill/create response', [
@@ -79,12 +82,11 @@ class BillCreate implements ClientInterface
 
     private function maskSensitiveData(array $data): array
     {
-        $masked = $data;
-        foreach (['api_token', 'SignatureValue'] as $key) {
-            if (isset($masked[$key])) {
-                $masked[$key] = '***';
-            }
+        // Only `api_token` can ever appear in the bill/create payload we log;
+        // the postback SignatureValue is never sent to Pally, only received.
+        if (isset($data['api_token'])) {
+            $data['api_token'] = '***';
         }
-        return $masked;
+        return $data;
     }
 }
