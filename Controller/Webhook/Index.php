@@ -10,10 +10,9 @@ use Magento\Framework\App\Request\InvalidRequestException;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Controller\ResultInterface;
-use Magento\Sales\Model\Order;
-use Magento\Sales\Model\ResourceModel\Order\CollectionFactory as OrderCollectionFactory;
 use Pally\Payment\Exception\WebhookLockException;
 use Pally\Payment\Exception\WebhookOrderNotFoundException;
+use Pally\Payment\Model\Order\OrderFinder;
 use Pally\Payment\Model\Webhook\Processor;
 use Pally\Payment\Model\Webhook\SignatureVerifier;
 use Psr\Log\LoggerInterface;
@@ -25,7 +24,7 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
         private readonly JsonFactory $resultJsonFactory,
         private readonly SignatureVerifier $signatureVerifier,
         private readonly Processor $processor,
-        private readonly OrderCollectionFactory $orderCollectionFactory,
+        private readonly OrderFinder $orderFinder,
         private readonly LoggerInterface $logger
     ) {
     }
@@ -109,35 +108,8 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
 
     private function resolveStoreId(string $custom, string $invId): ?int
     {
-        if ($custom !== '') {
-            $order = $this->findOrderByIncrementId($custom);
-            if ($order !== null) {
-                return (int) $order->getStoreId();
-            }
-        }
-
-        if ($invId !== '') {
-            $order = $this->findOrderByIncrementId($invId);
-            if ($order !== null) {
-                return (int) $order->getStoreId();
-            }
-        }
-
-        return null;
-    }
-
-    private function findOrderByIncrementId(string $incrementId): ?Order
-    {
-        $collection = $this->orderCollectionFactory->create();
-        $collection->addFieldToFilter('increment_id', $incrementId);
-        $collection->setPageSize(1);
-        $order = $collection->getFirstItem();
-
-        if ($order && $order->getId()) {
-            return $order;
-        }
-
-        return null;
+        $order = $this->orderFinder->findByCustomOrInvId($custom, $invId);
+        return $order !== null ? (int) $order->getStoreId() : null;
     }
 
     public function createCsrfValidationException(RequestInterface $request): ?InvalidRequestException

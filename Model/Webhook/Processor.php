@@ -10,10 +10,10 @@ use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Payment;
-use Magento\Sales\Model\ResourceModel\Order\CollectionFactory as OrderCollectionFactory;
 use Magento\Sales\Model\Service\InvoiceService;
 use Pally\Payment\Exception\WebhookLockException;
 use Pally\Payment\Exception\WebhookOrderNotFoundException;
+use Pally\Payment\Model\Order\OrderFinder;
 use Pally\Payment\Model\Order\PaymentStateMachine;
 use Psr\Log\LoggerInterface;
 
@@ -23,7 +23,7 @@ class Processor
     private const LOCK_TIMEOUT_SECONDS = 10;
 
     public function __construct(
-        private readonly OrderCollectionFactory $orderCollectionFactory,
+        private readonly OrderFinder $orderFinder,
         private readonly OrderRepositoryInterface $orderRepository,
         private readonly InvoiceService $invoiceService,
         private readonly TransactionFactory $transactionFactory,
@@ -38,7 +38,7 @@ class Processor
         $custom = (string) ($webhookData['custom'] ?? '');
         $invId = (string) ($webhookData['InvId'] ?? '');
 
-        $order = $this->findOrder($custom, $invId);
+        $order = $this->orderFinder->findByCustomOrInvId($custom, $invId);
         if ($order === null) {
             $this->logOrderNotFound($custom, $invId);
             throw new WebhookOrderNotFoundException(
@@ -384,38 +384,4 @@ class Processor
         return $orderCurrency === $currencyIn;
     }
 
-    private function findOrder(string $custom, string $invId): ?Order
-    {
-        // Primary lookup by custom (order increment_id)
-        if ($custom !== '') {
-            $order = $this->findOrderByIncrementId($custom);
-            if ($order !== null) {
-                return $order;
-            }
-        }
-
-        // Fallback: use InvId as order increment_id according to API callback contract.
-        if ($invId !== '') {
-            $order = $this->findOrderByIncrementId($invId);
-            if ($order !== null) {
-                return $order;
-            }
-        }
-
-        return null;
-    }
-
-    private function findOrderByIncrementId(string $incrementId): ?Order
-    {
-        $collection = $this->orderCollectionFactory->create();
-        $collection->addFieldToFilter('increment_id', $incrementId);
-        $collection->setPageSize(1);
-        $order = $collection->getFirstItem();
-
-        if ($order && $order->getId()) {
-            return $order;
-        }
-
-        return null;
-    }
 }
