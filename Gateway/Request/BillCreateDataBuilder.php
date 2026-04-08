@@ -33,7 +33,7 @@ class BillCreateDataBuilder implements BuilderInterface
             'order_id' => $order->getOrderIncrementId(),
             'amount' => sprintf('%.2f', (float) $order->getGrandTotalAmount()),
             'type' => $this->config->getBillType($storeId),
-            'lifetime' => (string) $this->config->getLifetime($storeId),
+            'ttl' => (string) $this->config->getLifetime($storeId),
             'custom' => $order->getOrderIncrementId(),
             'description' => __('Order #%1', $order->getOrderIncrementId())->render(),
             'payer_pays_commission' => '0',
