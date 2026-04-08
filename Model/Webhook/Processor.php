@@ -5,23 +5,30 @@ declare(strict_types=1);
 namespace Pally\Payment\Model\Webhook;
 
 use Magento\Framework\DB\Transaction;
+use Magento\Framework\Lock\LockManagerInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Payment;
 use Magento\Sales\Model\ResourceModel\Order\CollectionFactory as OrderCollectionFactory;
 use Magento\Sales\Model\Service\InvoiceService;
+use Pally\Payment\Exception\WebhookLockException;
+use Pally\Payment\Exception\WebhookOrderNotFoundException;
 use Pally\Payment\Model\Order\PaymentStateMachine;
 use Psr\Log\LoggerInterface;
 
 class Processor
 {
+    private const LOCK_PREFIX = 'pally_webhook_order_';
+    private const LOCK_TIMEOUT_SECONDS = 10;
+
     public function __construct(
         private readonly OrderCollectionFactory $orderCollectionFactory,
         private readonly OrderRepositoryInterface $orderRepository,
         private readonly InvoiceService $invoiceService,
         private readonly Transaction $transaction,
         private readonly PaymentStateMachine $stateMachine,
+        private readonly LockManagerInterface $lockManager,
         private readonly LoggerInterface $logger
     ) {
     }
@@ -32,37 +39,79 @@ class Processor
         $invId = (string) ($webhookData['InvId'] ?? '');
         $pallyStatus = strtoupper((string) ($webhookData['Status'] ?? ''));
         $trsId = (string) ($webhookData['TrsId'] ?? '');
+        $outSum = (string) ($webhookData['OutSum'] ?? '');
 
         $order = $this->findOrder($custom, $invId);
         if ($order === null) {
             $this->logOrderNotFound($custom, $invId);
-            return;
+            throw new WebhookOrderNotFoundException(
+                sprintf('Pally webhook: order not found (custom=%s, InvId=%s)', $custom, $invId)
+            );
         }
 
-        $payment = $order->getPayment();
-        if ($payment === null) {
-            $this->logger->warning('Pally webhook: order has no payment entity', [
+        $lockName = self::LOCK_PREFIX . $order->getIncrementId();
+        if (!$this->lockManager->lock($lockName, self::LOCK_TIMEOUT_SECONDS)) {
+            $this->logger->warning('Pally webhook: could not acquire lock', [
                 'order' => $order->getIncrementId(),
             ]);
-            return;
+            throw new WebhookLockException(
+                sprintf('Pally webhook: lock busy for order %s', $order->getIncrementId())
+            );
         }
 
-        if ($this->isDuplicateFinalEvent($order, $payment)) {
-            return;
+        try {
+            // Reload the order under the lock to get the freshest state.
+            $order = $this->orderRepository->get((int) $order->getId());
+
+            $payment = $order->getPayment();
+            if ($payment === null) {
+                $this->logger->warning('Pally webhook: order has no payment entity', [
+                    'order' => $order->getIncrementId(),
+                ]);
+                return;
+            }
+
+            if ($this->isDuplicateFinalEvent($order, $payment)) {
+                return;
+            }
+
+            if ($this->isMagentoFinalState($order)) {
+                return;
+            }
+
+            // For positive payment outcomes, the reported amount must match the order total.
+            // UNDERPAID/OVERPAID legitimately differ and are handled separately.
+            if ($outSum !== ''
+                && $pallyStatus === PaymentStateMachine::PALLY_STATUS_SUCCESS
+                && !$this->isAmountMatching($order, $outSum)
+            ) {
+                $this->logger->error('Pally webhook: SUCCESS amount mismatch', [
+                    'order' => $order->getIncrementId(),
+                    'expected' => $order->getGrandTotal(),
+                    'received' => $outSum,
+                ]);
+                $order->addCommentToStatusHistory(
+                    __(
+                        'Pally webhook rejected: amount mismatch (expected %1, received %2).',
+                        (string) $order->getGrandTotal(),
+                        $outSum
+                    )->render()
+                );
+                $this->orderRepository->save($order);
+                return;
+            }
+
+            $this->savePaymentMetadata($payment, $webhookData, $pallyStatus, $trsId);
+            $this->applyPallyStatus($order, $pallyStatus, $trsId);
+
+            $this->logger->info('Pally webhook: processed', [
+                'order' => $order->getIncrementId(),
+                'status' => $pallyStatus,
+                'TrsId' => $trsId,
+            ]);
+        } finally {
+            $this->lockManager->unlock($lockName);
         }
-
-        if ($this->isMagentoFinalState($order)) {
-            return;
-        }
-
-        $this->savePaymentMetadata($payment, $webhookData, $pallyStatus, $trsId);
-        $this->applyPallyStatus($order, $pallyStatus, $trsId);
-
-        $this->logger->info('Pally webhook: processed', [
-            'order' => $order->getIncrementId(),
-            'status' => $pallyStatus,
-            'TrsId' => $trsId,
-        ]);
     }
 
     private function logOrderNotFound(string $custom, string $invId): void
@@ -90,7 +139,11 @@ class Processor
 
     private function isMagentoFinalState(Order $order): bool
     {
-        if (!in_array($order->getState(), [Order::STATE_COMPLETE, Order::STATE_CLOSED], true)) {
+        if (!in_array(
+            $order->getState(),
+            [Order::STATE_COMPLETE, Order::STATE_CLOSED, Order::STATE_CANCELED],
+            true
+        )) {
             return false;
         }
 
@@ -150,9 +203,24 @@ class Processor
             return;
         }
 
+        // Empty or unknown status: persist metadata only, do not touch order state.
+        if ($pallyStatus === ''
+            || !in_array(
+                $pallyStatus,
+                [PaymentStateMachine::PALLY_STATUS_NEW, PaymentStateMachine::PALLY_STATUS_PROCESS],
+                true
+            )
+        ) {
+            $this->orderRepository->save($order);
+            return;
+        }
+
+        // Known intermediate Pally statuses (NEW/PROCESS) — keep order in pending_payment with a note.
         $stateInfo = $this->stateMachine->getMagentoState($pallyStatus);
-        $order->setState($stateInfo['state']);
-        $order->setStatus($stateInfo['status']);
+        if ($order->getState() !== $stateInfo['state']) {
+            $order->setState($stateInfo['state']);
+            $order->setStatus($stateInfo['status']);
+        }
         $order->addCommentToStatusHistory(
             __('Pally payment status: %1', $pallyStatus)->render()
         );
@@ -219,6 +287,14 @@ class Processor
             );
         }
         $this->orderRepository->save($order);
+    }
+
+    private function isAmountMatching(Order $order, string $outSum): bool
+    {
+        $expected = (float) $order->getGrandTotal();
+        $received = (float) $outSum;
+
+        return abs($expected - $received) < 0.01;
     }
 
     private function findOrder(string $custom, string $invId): ?Order

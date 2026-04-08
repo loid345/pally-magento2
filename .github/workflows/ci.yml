@@ -51,7 +51,7 @@ jobs:
           "$(composer global config home)/vendor/bin/phpcs" \
             --standard=Magento2 \
             --extensions=php,phtml \
-            --ignore=vendor/ \
+            --ignore=vendor/,Test/ \
             -n \
             -p \
             .
@@ -68,18 +68,51 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           tools: composer
+      - name: Install Magento dependencies from the mage-os public mirror
+        id: magento-install
+        continue-on-error: true
+        run: |
+          # mage-os.org publishes Magento 2 community packages without auth.
+          composer config repositories.mage-os composer https://mirror.mage-os.org/
+          COMPOSER_MEMORY_LIMIT=-1 composer install \
+            --no-interaction --no-progress --prefer-dist --ignore-platform-reqs
       - name: Install PHPStan
         run: |
-          composer global config --no-plugins allow-plugins.phpstan/extension-installer true
-          composer global require phpstan/phpstan phpstan/extension-installer
+          mkdir -p /tmp/phpstan-runner
+          cd /tmp/phpstan-runner
+          composer require --no-interaction --no-progress 'phpstan/phpstan:^1.11'
       - name: Run PHPStan
         run: |
-          if [ ! -d "vendor/magento" ]; then
-            echo "Magento dependencies are not installed in this repository checkout; skipping PHPStan."
+          if [ ! -f vendor/autoload.php ] || [ ! -d vendor/magento ]; then
+            echo "::warning::Magento dependencies are not installed (mage-os mirror unavailable?). Skipping PHPStan."
             exit 0
           fi
-          PHPSTAN_BIN="$(composer global config home)/vendor/bin/phpstan"
-          "$PHPSTAN_BIN" analyse -c phpstan.neon --no-progress --error-format=github
+          /tmp/phpstan-runner/vendor/bin/phpstan analyse \
+            -c phpstan.neon \
+            --memory-limit=1G \
+            --no-progress \
+            --error-format=github
+
+  phpunit:
+    name: PHPUnit (Pally_Payment unit)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer
+      - name: Install PHPUnit
+        run: |
+          mkdir -p /tmp/phpunit-runner
+          cd /tmp/phpunit-runner
+          composer require --no-interaction --no-progress 'phpunit/phpunit:^11.0'
+      - name: Run PHPUnit
+        run: |
+          /tmp/phpunit-runner/vendor/bin/phpunit -c phpunit.xml.dist
 
   phpmd:
     name: PHP Mess Detector
@@ -91,7 +124,7 @@ jobs:
           php-version: '8.3'
           tools: phpmd
       - name: Run PHPMD
-        run: phpmd . text phpmd-ruleset.xml --exclude vendor/
+        run: phpmd . text phpmd-ruleset.xml --exclude 'vendor/*,Test/*'
 
   xml-validation:
     name: XML Validation
@@ -165,27 +198,30 @@ jobs:
           # Check for hardcoded API tokens/keys
           if grep -rn --include='*.php' --include='*.xml' --include='*.js' \
             -E '(Bearer\s+[A-Za-z0-9]{20,}|api[_-]?(key|token|secret)\s*=\s*["\x27][A-Za-z0-9]{10,})' \
-            --exclude-dir=vendor . ; then
+            --exclude-dir=vendor --exclude-dir=Test . ; then
             echo "::warning::Potential hardcoded secrets found"
             ISSUES=$((ISSUES+1))
           fi
 
           # Check for MD5 usage outside SignatureVerifier (Pally requires MD5 for signatures)
-          MD5_FILES=$(grep -rln --include='*.php' 'md5(' --exclude-dir=vendor . | grep -v SignatureVerifier.php || true)
+          MD5_FILES=$(grep -rln --include='*.php' 'md5(' \
+            --exclude-dir=vendor --exclude-dir=Test . \
+            | grep -vx './Model/Webhook/SignatureVerifier.php' || true)
           if [ -n "$MD5_FILES" ]; then
             echo "::warning::MD5 usage found outside SignatureVerifier: $MD5_FILES"
             ISSUES=$((ISSUES+1))
           fi
 
-          # Check for eval/exec usage
+          # Check for eval/exec usage in production code
           if grep -rn --include='*.php' -E '\b(eval|exec|system|passthru|shell_exec|popen|proc_open)\s*\(' \
-            --exclude-dir=vendor . ; then
+            --exclude-dir=vendor --exclude-dir=Test . ; then
             echo "::error::Dangerous function usage found"
             exit 1
           fi
 
           # Check for SQL injection patterns
-          if grep -rn --include='*.php' -E '\$_(GET|POST|REQUEST|SERVER)\[' --exclude-dir=vendor . ; then
+          if grep -rn --include='*.php' -E '\$_(GET|POST|REQUEST|SERVER)\[' \
+            --exclude-dir=vendor --exclude-dir=Test . ; then
             echo "::error::Direct superglobal access found — use RequestInterface instead"
             exit 1
           fi
@@ -233,7 +269,7 @@ jobs:
             --standard=PHPCompatibility \
             --runtime-set testVersion 8.3- \
             --extensions=php \
-            --ignore=vendor/ \
+            --ignore=vendor/,Test/_stub/ \
             -p \
             .
 
@@ -380,7 +416,11 @@ jobs:
       - name: Check namespace declarations
         run: |
           ERRORS=0
-          for f in $(find . -name '*.php' -not -path './vendor/*' -not -name 'registration.php'); do
+          for f in $(find . -name '*.php' \
+              -not -path './vendor/*' \
+              -not -path './Test/Bootstrap.php' \
+              -not -path './Test/_stub/*' \
+              -not -name 'registration.php'); do
             if ! grep -q '^namespace Pally\\Payment' "$f"; then
               echo "::error file=$f::Missing or incorrect namespace"
               ERRORS=$((ERRORS+1))

@@ -66,7 +66,14 @@ class Config
             return '';
         }
 
-        return (string) $this->encryptor->decrypt($value);
+        try {
+            $decrypted = (string) $this->encryptor->decrypt($value);
+        } catch (\Exception $e) {
+            return '';
+        }
+
+        // If decryption returned empty (legacy unencrypted value), fall back to the raw value.
+        return $decrypted !== '' ? $decrypted : $value;
     }
 
     public function getShopId(?int $storeId = null): string

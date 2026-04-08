@@ -22,16 +22,28 @@ class BillCreateValidator extends AbstractValidator
         $errorMessages = [];
         $errorCodes = [];
 
-        // API returns { success: true/false, bill_id, link_page_url, link_url }
-        if (isset($response['success']) && $response['success'] === false) {
-            $errorMessages[] = __('Payment service rejected the request.');
-            $errorCodes[] = 'API_ERROR';
-        } elseif (empty($response['bill_id']) || empty($response['link_page_url'])) {
+        // API returns { success: true/false, bill_id, link_page_url, link_url }.
+        // success may arrive as a real boolean or as a string ("true"/"false"/"1"/"0").
+        if (array_key_exists('success', $response)) {
+            $success = filter_var(
+                $response['success'],
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            );
+            if ($success === false) {
+                $errorMessages[] = __('Payment service rejected the request.');
+                $errorCodes[] = 'API_ERROR';
+            }
+        }
+
+        if ($errorMessages === []
+            && (empty($response['bill_id']) || empty($response['link_page_url']))
+        ) {
             $errorMessages[] = __('Invalid response from payment service. Missing bill_id or link_page_url.');
             $errorCodes[] = 'INVALID_RESPONSE';
         }
 
-        $isValid = empty($errorMessages);
+        $isValid = $errorMessages === [];
 
         return $this->createResult($isValid, $errorMessages, $errorCodes);
     }

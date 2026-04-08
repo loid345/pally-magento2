@@ -40,3 +40,4 @@
 "Payment service rejected the request.","Сервис оплаты отклонил запрос."
 "Payment failed via Pally.","Оплата через Pally не удалась."
 "Pally: payment underpaid.","Pally: недоплата."
+"Pally webhook rejected: amount mismatch (expected %1, received %2).","Pally webhook: сумма не совпадает (ожидалось %1, получено %2)."

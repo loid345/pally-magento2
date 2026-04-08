@@ -12,6 +12,8 @@ use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Controller\ResultInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\ResourceModel\Order\CollectionFactory as OrderCollectionFactory;
+use Pally\Payment\Exception\WebhookLockException;
+use Pally\Payment\Exception\WebhookOrderNotFoundException;
 use Pally\Payment\Model\Webhook\Processor;
 use Pally\Payment\Model\Webhook\SignatureVerifier;
 use Psr\Log\LoggerInterface;
@@ -41,8 +43,13 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
         $accountType = (string) $this->request->getParam('AccountType', '');
         $commission = (string) $this->request->getParam('Commission', '');
 
-        if ($invId === '' || $outSum === '' || $signatureValue === '') {
-            $this->logger->warning('Pally webhook: missing required parameters');
+        if ($invId === '' || $outSum === '' || $signatureValue === '' || $status === '') {
+            $this->logger->warning('Pally webhook: missing required parameters', [
+                'has_InvId' => $invId !== '',
+                'has_OutSum' => $outSum !== '',
+                'has_SignatureValue' => $signatureValue !== '',
+                'has_Status' => $status !== '',
+            ]);
             return $result->setHttpResponseCode(400)->setData(['ok' => false, 'error' => 'bad_request']);
         }
 
@@ -69,13 +76,30 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
 
         try {
             $this->processor->process($webhookData);
+        } catch (WebhookOrderNotFoundException $e) {
+            $this->logger->warning('Pally webhook: order not found', [
+                'error' => $e->getMessage(),
+                'InvId' => $invId,
+                'custom' => $custom,
+            ]);
+            // 404 tells Pally the referenced order will never exist; no point retrying.
+            return $result->setHttpResponseCode(404)->setData(['ok' => false, 'error' => 'order_not_found']);
+        } catch (WebhookLockException $e) {
+            $this->logger->warning('Pally webhook: lock busy, asking Pally to retry', [
+                'error' => $e->getMessage(),
+                'InvId' => $invId,
+                'custom' => $custom,
+            ]);
+            // 503 signals a transient condition so Pally retries after another worker releases the lock.
+            return $result->setHttpResponseCode(503)->setData(['ok' => false, 'error' => 'locked']);
         } catch (\Exception $e) {
             $this->logger->error('Pally webhook: processing error', [
                 'error' => $e->getMessage(),
                 'InvId' => $invId,
                 'custom' => $custom,
             ]);
-            return $result->setHttpResponseCode(200)->setData(['ok' => true]);
+            // Return 500 so Pally retries the webhook delivery instead of marking it delivered.
+            return $result->setHttpResponseCode(500)->setData(['ok' => false, 'error' => 'processing_error']);
         }
 
         return $result->setHttpResponseCode(200)->setData(['ok' => true]);
