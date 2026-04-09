@@ -41,3 +41,4 @@
 "Payment failed via Pally.","Payment failed via Pally."
 "Pally: payment underpaid.","Pally: payment underpaid."
 "Pally webhook rejected: amount mismatch (expected %1, received %2).","Pally webhook rejected: amount mismatch (expected %1, received %2)."
+"Pally webhook rejected: currency mismatch (expected %1, received %2).","Pally webhook rejected: currency mismatch (expected %1, received %2)."

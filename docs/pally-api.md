@@ -277,9 +277,10 @@ SignatureValue = strtoupper( md5( OutSum . ":" . InvId . ":" . apiToken ) )
 
 | Источник | Поля, которые читает/пишет модуль |
 | --- | --- |
-| `POST bill/create` (отправляет) | `shop_id`, `order_id`, `amount`, `type`, `custom`, `description`, `payer_pays_commission`, `success_url`, `fail_url`, `shop_url` *(не в доке)*, `currency_in` *(если не пустое)*, `lifetime` *(должно быть `ttl`!)* |
-| `bill/create` response | `success`, `bill_id`, `link_page_url`, `link_url` |
-| `GET bill/status` | запрос `id=<bill_id>`, читает `status`/`Status` |
-| `GET payment/status` | запрос `id=<TrsId>`, читает `status`/`Status` |
-| Postback (читает) | `InvId`, `OutSum`, `SignatureValue`, `custom`, `TrsId`, `Status`, `AccountType`, `Commission` |
-| Postback (НЕ читает) | `CurrencyIn` (обязательное!), `AccountNumber`, `BalanceAmount`, `BalanceCurrency`, `Payer*`, `ErrorCode`, `ErrorMessage` |
+| `POST bill/create` (отправляет) | `shop_id`, `order_id`, `amount`, `type`, `ttl`, `custom`, `description`, `payer_pays_commission`, `success_url`, `fail_url`, `currency_in` *(только если ∈ {RUB,USD,EUR})* |
+| `POST bill/create` (НЕ отправляет) | `shop_url` *(не в API)*, `lifetime` *(нет такого поля, правильное имя — `ttl`)*, `locale`, `payer_email`, `name`, `return_url`, `payment_method`, `request_fields[*]`, `items[*]` |
+| `bill/create` response | `success` *(bool или строка `"true"`)*, `bill_id`, `link_page_url`, `link_url` |
+| `GET bill/status` | запрос `id=<bill_id>`, читает `status`, `amount`, `currency_in` |
+| `GET payment/status` | запрос `id=<TrsId>`, читает `status`, `amount`, `currency_in` |
+| Postback (читает) | `InvId`, `OutSum`, `SignatureValue`, `custom`, `TrsId`, `Status`, `AccountType`, `Commission`, `CurrencyIn` |
+| Postback (НЕ читает) | `AccountNumber`, `BalanceAmount`, `BalanceCurrency`, `Payer*`, `ErrorCode`, `ErrorMessage` |

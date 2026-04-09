@@ -92,6 +92,25 @@
         </arguments>
     </type>
 
+    <!-- Signature Verifier -->
+    <type name="Pally\Payment\Model\Webhook\SignatureVerifier">
+        <arguments>
+            <argument name="logger" xsi:type="object">PallyPaymentLogger</argument>
+        </arguments>
+    </type>
+
+    <!-- Customer-facing return controllers -->
+    <type name="Pally\Payment\Controller\Callback\Success">
+        <arguments>
+            <argument name="logger" xsi:type="object">PallyPaymentLogger</argument>
+        </arguments>
+    </type>
+    <type name="Pally\Payment\Controller\Callback\Fail">
+        <arguments>
+            <argument name="logger" xsi:type="object">PallyPaymentLogger</argument>
+        </arguments>
+    </type>
+
     <!-- Cron -->
     <type name="Pally\Payment\Cron\PollPendingPayments">
         <arguments>

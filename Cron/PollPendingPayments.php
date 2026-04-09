@@ -86,6 +86,7 @@ class PollPendingPayments
         $pallyStatus = $statusData['status'];
         $resolvedTrsId = $statusData['trs_id'];
         $reportedAmount = $statusData['amount'];
+        $reportedCurrency = $statusData['currency'];
 
         if (!$pallyStatus) {
             return;
@@ -112,6 +113,13 @@ class PollPendingPayments
             'TrsId' => $resolvedTrsId,
         ];
 
+        // Forward the currency from the API response so the Processor's
+        // currency-mismatch guard runs for cron-driven updates too. Skipped
+        // when the API did not surface it (then guard is a no-op as before).
+        if ($reportedCurrency !== '') {
+            $webhookData['CurrencyIn'] = $reportedCurrency;
+        }
+
         $this->processor->process($webhookData);
 
         $this->logger->info('Pally cron: updated order status', [
@@ -121,7 +129,7 @@ class PollPendingPayments
     }
 
     /**
-     * @return array{status: string, trs_id: string, amount: string}
+     * @return array{status: string, trs_id: string, amount: string, currency: string}
      */
     private function resolveStatusData(Order $order, Payment $payment): array
     {
@@ -135,6 +143,7 @@ class PollPendingPayments
                 'status' => $paymentStatus['status'],
                 'trs_id' => $trsId,
                 'amount' => $paymentStatus['amount'],
+                'currency' => $paymentStatus['currency'],
             ];
         }
 
@@ -142,12 +151,12 @@ class PollPendingPayments
     }
 
     /**
-     * @return array{status: string, amount: string}
+     * @return array{status: string, amount: string, currency: string}
      */
     private function fetchPaymentStatus(Order $order, string $trsId, int $storeId): array
     {
         if ($trsId === '') {
-            return ['status' => '', 'amount' => ''];
+            return ['status' => '', 'amount' => '', 'currency' => ''];
         }
 
         try {
@@ -156,17 +165,18 @@ class PollPendingPayments
             $this->logger->debug('Pally cron: payment/status failed, trying bill/status', [
                 'order' => $order->getIncrementId(),
             ]);
-            return ['status' => '', 'amount' => ''];
+            return ['status' => '', 'amount' => '', 'currency' => ''];
         }
 
         return [
             'status' => strtoupper((string) ($response['status'] ?? '')),
             'amount' => $this->formatAmount($response['amount'] ?? null),
+            'currency' => strtoupper((string) ($response['currency_in'] ?? '')),
         ];
     }
 
     /**
-     * @return array{status: string, trs_id: string, amount: string}
+     * @return array{status: string, trs_id: string, amount: string, currency: string}
      */
     private function fetchBillStatus(
         Order $order,
@@ -175,7 +185,7 @@ class PollPendingPayments
         int $storeId
     ): array {
         if ($billId === '') {
-            return ['status' => '', 'trs_id' => $trsId, 'amount' => ''];
+            return ['status' => '', 'trs_id' => $trsId, 'amount' => '', 'currency' => ''];
         }
 
         try {
@@ -184,13 +194,14 @@ class PollPendingPayments
             $this->logger->debug('Pally cron: bill/status failed', [
                 'order' => $order->getIncrementId(),
             ]);
-            return ['status' => '', 'trs_id' => $trsId, 'amount' => ''];
+            return ['status' => '', 'trs_id' => $trsId, 'amount' => '', 'currency' => ''];
         }
 
         return [
             'status' => strtoupper((string) ($response['status'] ?? '')),
             'trs_id' => $trsId,
             'amount' => $this->formatAmount($response['amount'] ?? null),
+            'currency' => strtoupper((string) ($response['currency_in'] ?? '')),
         ];
     }
 
