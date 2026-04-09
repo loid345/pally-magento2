@@ -41,11 +41,22 @@ class Start implements HttpGetActionInterface
     }
 
     /**
+     * Known Pally-operated hosts that this controller is allowed to redirect
+     * the customer to. Keeping this tight makes the controller useless as an
+     * open redirector even if an attacker somehow managed to write a hostile
+     * URL into payment additional_information.
+     */
+    private const ALLOWED_HOSTS = [
+        'pally.info',
+        'pal24.pro',
+    ];
+
+    /**
      * Defence-in-depth check for the Pally-issued payment page URL before
      * redirecting the customer. The value originates from a signed API
-     * response, but we still require an absolute https:// URL with a host
-     * to prevent any stored-URL tampering turning this controller into an
-     * open redirect.
+     * response, but we still require an absolute https:// URL whose host
+     * belongs to the Pally whitelist to prevent any stored-URL tampering
+     * turning this controller into an open redirect.
      */
     private function isSafePaymentUrl(string $url): bool
     {
@@ -55,8 +66,18 @@ class Start implements HttpGetActionInterface
         }
 
         $scheme = strtolower((string) ($parts['scheme'] ?? ''));
-        $host = (string) ($parts['host'] ?? '');
+        $host = strtolower((string) ($parts['host'] ?? ''));
 
-        return $scheme === 'https' && $host !== '';
+        if ($scheme !== 'https' || $host === '') {
+            return false;
+        }
+
+        foreach (self::ALLOWED_HOSTS as $allowed) {
+            if ($host === $allowed || str_ends_with($host, '.' . $allowed)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

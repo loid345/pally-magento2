@@ -67,6 +67,15 @@
         </arguments>
     </virtualType>
 
+    <!-- Validator Pool (currency check used by Adapter::canUseForCurrency) -->
+    <virtualType name="PallyPaymentValidatorPool" type="Magento\Payment\Gateway\Validator\ValidatorPool">
+        <arguments>
+            <argument name="validators" xsi:type="array">
+                <item name="currency" xsi:type="string">Pally\Payment\Gateway\Validator\CurrencyValidator</item>
+            </argument>
+        </arguments>
+    </virtualType>
+
     <!-- Payment Method Facade -->
     <virtualType name="PallyPaymentFacade" type="Magento\Payment\Model\Method\Adapter">
         <arguments>
@@ -75,6 +84,7 @@
             <argument name="infoBlockType" xsi:type="string">Magento\Payment\Block\Info</argument>
             <argument name="valueHandlerPool" xsi:type="object">PallyPaymentValueHandlerPool</argument>
             <argument name="commandPool" xsi:type="object">PallyPaymentCommandPool</argument>
+            <argument name="validatorPool" xsi:type="object">PallyPaymentValidatorPool</argument>
         </arguments>
     </virtualType>
 
@@ -87,6 +97,25 @@
 
     <!-- Webhook Controller -->
     <type name="Pally\Payment\Controller\Webhook\Index">
+        <arguments>
+            <argument name="logger" xsi:type="object">PallyPaymentLogger</argument>
+        </arguments>
+    </type>
+
+    <!-- Signature Verifier -->
+    <type name="Pally\Payment\Model\Webhook\SignatureVerifier">
+        <arguments>
+            <argument name="logger" xsi:type="object">PallyPaymentLogger</argument>
+        </arguments>
+    </type>
+
+    <!-- Customer-facing return controllers -->
+    <type name="Pally\Payment\Controller\Callback\Success">
+        <arguments>
+            <argument name="logger" xsi:type="object">PallyPaymentLogger</argument>
+        </arguments>
+    </type>
+    <type name="Pally\Payment\Controller\Callback\Fail">
         <arguments>
             <argument name="logger" xsi:type="object">PallyPaymentLogger</argument>
         </arguments>

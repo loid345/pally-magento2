@@ -32,7 +32,9 @@ class PaymentStateMachineTest extends TestCase
         return [
             'success'   => ['SUCCESS',   Order::STATE_PROCESSING,      'processing'],
             'overpaid'  => ['OVERPAID',  Order::STATE_PROCESSING,      'processing'],
-            'fail'      => ['FAIL',      Order::STATE_CANCELED,        'canceled'],
+            // FAIL is mapped to HOLDED (not CANCELED) so a late SUCCESS retry
+            // from Pally can still recover the order — see PaymentStateMachine.
+            'fail'      => ['FAIL',      Order::STATE_HOLDED,          'holded'],
             'underpaid' => ['UNDERPAID', Order::STATE_HOLDED,          'holded'],
             'new'       => ['NEW',       Order::STATE_PENDING_PAYMENT, 'pending_payment'],
             'process'   => ['PROCESS',   Order::STATE_PENDING_PAYMENT, 'pending_payment'],

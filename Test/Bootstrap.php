@@ -34,3 +34,10 @@ spl_autoload_register(static function (string $class): void {
 if (!class_exists(\Magento\Sales\Model\Order::class)) {
     require_once __DIR__ . '/_stub/Magento/Sales/Model/Order.php';
 }
+
+// Stand-in for Psr\Log\LoggerInterface — CI's standalone phpunit runner
+// does not ship psr/log, so we provide a thin shim here. The real package
+// shadows this declaration when installed via composer.
+if (!interface_exists(\Psr\Log\LoggerInterface::class)) {
+    require_once __DIR__ . '/_stub/Psr/Log/LoggerInterface.php';
+}

@@ -7,6 +7,7 @@ namespace Pally\Payment\Test\Unit\Model\Webhook;
 use Pally\Payment\Gateway\Config\Config;
 use Pally\Payment\Model\Webhook\SignatureVerifier;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 
 class SignatureVerifierTest extends TestCase
 {
@@ -19,7 +20,23 @@ class SignatureVerifierTest extends TestCase
         $config = $this->createMock(Config::class);
         $config->method('getApiToken')->willReturn(self::TOKEN);
 
-        $this->verifier = new SignatureVerifier($config);
+        $this->verifier = new SignatureVerifier($config, $this->createMock(LoggerInterface::class));
+    }
+
+    public function testEmptyApiTokenRejected(): void
+    {
+        $config = $this->createMock(Config::class);
+        $config->method('getApiToken')->willReturn('');
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::once())->method('error');
+
+        $verifier = new SignatureVerifier($config, $logger);
+
+        // Even a "legit looking" signature must be rejected when the secret
+        // is missing, because md5("OutSum:InvId:") is trivially forgeable.
+        self::assertFalse(
+            $verifier->isValid('10.00', '100000200', strtoupper(md5('10.00:100000200:')))
+        );
     }
 
     public function testValidSignatureUppercase(): void

@@ -5,6 +5,7 @@
     "license": "proprietary",
     "require": {
         "php": ">=8.3",
+        "ext-bcmath": "*",
         "magento/module-payment": "^100.4",
         "magento/module-sales": "^103.0",
         "magento/module-checkout": "^100.4",

@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Pally\Payment\Model\Webhook;
 
-use Magento\Framework\DB\Transaction;
+use Magento\Framework\DB\TransactionFactory;
 use Magento\Framework\Lock\LockManagerInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Payment;
-use Magento\Sales\Model\ResourceModel\Order\CollectionFactory as OrderCollectionFactory;
 use Magento\Sales\Model\Service\InvoiceService;
 use Pally\Payment\Exception\WebhookLockException;
 use Pally\Payment\Exception\WebhookOrderNotFoundException;
+use Pally\Payment\Model\Order\OrderFinder;
 use Pally\Payment\Model\Order\PaymentStateMachine;
 use Psr\Log\LoggerInterface;
 
@@ -23,10 +23,10 @@ class Processor
     private const LOCK_TIMEOUT_SECONDS = 10;
 
     public function __construct(
-        private readonly OrderCollectionFactory $orderCollectionFactory,
+        private readonly OrderFinder $orderFinder,
         private readonly OrderRepositoryInterface $orderRepository,
         private readonly InvoiceService $invoiceService,
-        private readonly Transaction $transaction,
+        private readonly TransactionFactory $transactionFactory,
         private readonly PaymentStateMachine $stateMachine,
         private readonly LockManagerInterface $lockManager,
         private readonly LoggerInterface $logger
@@ -37,11 +37,8 @@ class Processor
     {
         $custom = (string) ($webhookData['custom'] ?? '');
         $invId = (string) ($webhookData['InvId'] ?? '');
-        $pallyStatus = strtoupper((string) ($webhookData['Status'] ?? ''));
-        $trsId = (string) ($webhookData['TrsId'] ?? '');
-        $outSum = (string) ($webhookData['OutSum'] ?? '');
 
-        $order = $this->findOrder($custom, $invId);
+        $order = $this->orderFinder->findByCustomOrInvId($custom, $invId);
         if ($order === null) {
             $this->logOrderNotFound($custom, $invId);
             throw new WebhookOrderNotFoundException(
@@ -62,56 +59,99 @@ class Processor
         try {
             // Reload the order under the lock to get the freshest state.
             $order = $this->orderRepository->get((int) $order->getId());
-
-            $payment = $order->getPayment();
-            if ($payment === null) {
-                $this->logger->warning('Pally webhook: order has no payment entity', [
-                    'order' => $order->getIncrementId(),
-                ]);
-                return;
-            }
-
-            if ($this->isDuplicateFinalEvent($order, $payment)) {
-                return;
-            }
-
-            if ($this->isMagentoFinalState($order)) {
-                return;
-            }
-
-            // For positive payment outcomes, the reported amount must match the order total.
-            // UNDERPAID/OVERPAID legitimately differ and are handled separately.
-            if ($outSum !== ''
-                && $pallyStatus === PaymentStateMachine::PALLY_STATUS_SUCCESS
-                && !$this->isAmountMatching($order, $outSum)
-            ) {
-                $this->logger->error('Pally webhook: SUCCESS amount mismatch', [
-                    'order' => $order->getIncrementId(),
-                    'expected' => $order->getGrandTotal(),
-                    'received' => $outSum,
-                ]);
-                $order->addCommentToStatusHistory(
-                    __(
-                        'Pally webhook rejected: amount mismatch (expected %1, received %2).',
-                        (string) $order->getGrandTotal(),
-                        $outSum
-                    )->render()
-                );
-                $this->orderRepository->save($order);
-                return;
-            }
-
-            $this->savePaymentMetadata($payment, $webhookData, $pallyStatus, $trsId);
-            $this->applyPallyStatus($order, $pallyStatus, $trsId);
-
-            $this->logger->info('Pally webhook: processed', [
-                'order' => $order->getIncrementId(),
-                'status' => $pallyStatus,
-                'TrsId' => $trsId,
-            ]);
+            $this->processLocked($order, $webhookData);
         } finally {
             $this->lockManager->unlock($lockName);
         }
+    }
+
+    private function processLocked(Order $order, array $webhookData): void
+    {
+        $pallyStatus = strtoupper((string) ($webhookData['Status'] ?? ''));
+        $trsId = (string) ($webhookData['TrsId'] ?? '');
+
+        $payment = $order->getPayment();
+        if ($payment === null) {
+            $this->logger->warning('Pally webhook: order has no payment entity', [
+                'order' => $order->getIncrementId(),
+            ]);
+            return;
+        }
+
+        if ($this->isDuplicateFinalEvent($order, $payment, $pallyStatus)) {
+            return;
+        }
+
+        if ($this->isMagentoFinalState($order)) {
+            return;
+        }
+
+        if ($this->rejectIfMismatch($order, $webhookData, $pallyStatus)) {
+            return;
+        }
+
+        $this->savePaymentMetadata($payment, $webhookData, $pallyStatus, $trsId);
+        $this->applyPallyStatus($order, $pallyStatus, $trsId);
+
+        $this->logger->info('Pally webhook: processed', [
+            'order' => $order->getIncrementId(),
+            'status' => $pallyStatus,
+            'TrsId' => $trsId,
+        ]);
+    }
+
+    /**
+     * Reject the webhook with a status-history note if SUCCESS was reported but
+     * the amount or currency does not match the order. Returns true when the
+     * update was rejected (and the order was saved with the explanatory note),
+     * false otherwise.
+     */
+    private function rejectIfMismatch(Order $order, array $webhookData, string $pallyStatus): bool
+    {
+        if ($pallyStatus !== PaymentStateMachine::PALLY_STATUS_SUCCESS) {
+            return false;
+        }
+
+        $outSum = (string) ($webhookData['OutSum'] ?? '');
+        if ($outSum !== '' && !$this->isAmountMatching($order, $outSum)) {
+            $this->logger->error('Pally webhook: SUCCESS amount mismatch', [
+                'order' => $order->getIncrementId(),
+                'expected' => $order->getGrandTotal(),
+                'received' => $outSum,
+            ]);
+            $order->addCommentToStatusHistory(
+                __(
+                    'Pally webhook rejected: amount mismatch (expected %1, received %2).',
+                    (string) $order->getGrandTotal(),
+                    $outSum
+                )->render()
+            );
+            $this->orderRepository->save($order);
+            return true;
+        }
+
+        // The amount check above is only meaningful if the currency matches.
+        // Pally guarantees CurrencyIn in every postback, so we can compare it
+        // against the order currency and reject the update if they disagree.
+        $currencyIn = strtoupper((string) ($webhookData['CurrencyIn'] ?? ''));
+        if ($currencyIn !== '' && !$this->isCurrencyMatching($order, $currencyIn)) {
+            $this->logger->error('Pally webhook: SUCCESS currency mismatch', [
+                'order' => $order->getIncrementId(),
+                'expected' => $order->getOrderCurrencyCode(),
+                'received' => $currencyIn,
+            ]);
+            $order->addCommentToStatusHistory(
+                __(
+                    'Pally webhook rejected: currency mismatch (expected %1, received %2).',
+                    (string) $order->getOrderCurrencyCode(),
+                    $currencyIn
+                )->render()
+            );
+            $this->orderRepository->save($order);
+            return true;
+        }
+
+        return false;
     }
 
     private function logOrderNotFound(string $custom, string $invId): void
@@ -122,10 +162,33 @@ class Processor
         ]);
     }
 
-    private function isDuplicateFinalEvent(Order $order, Payment $payment): bool
+    private function isDuplicateFinalEvent(Order $order, Payment $payment, string $newStatus): bool
     {
         $currentPallyStatus = (string) $payment->getAdditionalInformation('pally_status');
         if (!$this->stateMachine->isFinalStatus($currentPallyStatus)) {
+            return false;
+        }
+
+        // Allow late-arriving positive outcomes to overwrite a prior negative
+        // final status (FAIL / UNDERPAID). This happens when Pally initially
+        // reports FAIL and later retries with SUCCESS/OVERPAID, or when a
+        // shopper underpays and then tops the bill up.
+        $negativeFinals = [
+            PaymentStateMachine::PALLY_STATUS_FAIL,
+            PaymentStateMachine::PALLY_STATUS_UNDERPAID,
+        ];
+        $positiveFinals = [
+            PaymentStateMachine::PALLY_STATUS_SUCCESS,
+            PaymentStateMachine::PALLY_STATUS_OVERPAID,
+        ];
+        if (in_array($currentPallyStatus, $negativeFinals, true)
+            && in_array($newStatus, $positiveFinals, true)
+        ) {
+            $this->logger->info('Pally webhook: upgrading negative final status to positive', [
+                'order'          => $order->getIncrementId(),
+                'current_status' => $currentPallyStatus,
+                'new_status'     => $newStatus,
+            ]);
             return false;
         }
 
@@ -229,20 +292,35 @@ class Processor
 
     private function handleSuccess(Order $order, string $trsId): void
     {
-        // Don't create invoice if already exists or can't be invoiced
+        $payment = $order->getPayment();
+        if ($payment !== null) {
+            if ($trsId !== '') {
+                $payment->setTransactionId($trsId);
+            }
+            $payment->setIsTransactionClosed(true);
+            $payment->setIsTransactionPending(false);
+        }
+
+        // Late SUCCESS arriving after a FAIL/UNDERPAID that put the order on
+        // hold needs to lift the hold first; Magento refuses to leave HOLDED
+        // via setState() alone. unhold() resets back to the previous state
+        // (typically pending_payment), then the SUCCESS flow promotes to
+        // processing as usual.
+        if ($order->getState() === Order::STATE_HOLDED && $order->canUnhold()) {
+            $order->unhold();
+        }
+
+        // Don't create invoice if already exists or can't be invoiced;
+        // still persist the transaction flags set above.
         if ($order->hasInvoices() || !$order->canInvoice()) {
             $order->setState(Order::STATE_PROCESSING);
             $order->setStatus('processing');
+            $order->addCommentToStatusHistory(
+                __('Pally payment confirmed. Transaction ID: %1', $trsId)->render()
+            );
             $this->orderRepository->save($order);
             return;
         }
-
-        $payment = $order->getPayment();
-        if ($trsId !== '') {
-            $payment->setTransactionId($trsId);
-        }
-        $payment->setIsTransactionClosed(true);
-        $payment->setIsTransactionPending(false);
 
         $invoice = $this->invoiceService->prepareInvoice($order);
         $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
@@ -254,9 +332,13 @@ class Processor
             __('Pally payment confirmed. Transaction ID: %1', $trsId)->render()
         );
 
-        $this->transaction->addObject($invoice);
-        $this->transaction->addObject($order);
-        $this->transaction->save();
+        // Save invoice + order atomically using a fresh Transaction per call;
+        // sharing a single injected Transaction instance across webhook calls
+        // would accumulate stale objects.
+        $transaction = $this->transactionFactory->create();
+        $transaction->addObject($invoice);
+        $transaction->addObject($order);
+        $transaction->save();
     }
 
     private function handleUnderpaid(Order $order): void
@@ -276,10 +358,18 @@ class Processor
 
     private function handleFail(Order $order): void
     {
-        if ($order->canCancel()) {
-            $order->cancel();
+        // Pally retries postbacks up to 5 times (10^n strategy) and a real
+        // payment can land AFTER an initial FAIL — see docs/pally-api.md
+        // "Postback / Retry". If we hard-cancel the order on the first FAIL,
+        // a later SUCCESS cannot recover it (Magento has no native
+        // un-cancel: stock has been returned, gift cards refunded, etc.).
+        // We therefore put the order on hold instead, mirroring UNDERPAID
+        // handling. The merchant can cancel manually, or Magento's built-in
+        // sales_clean_orders cron will auto-cancel stale pending orders.
+        if ($order->canHold()) {
+            $order->hold();
             $order->addCommentToStatusHistory(
-                __('Payment failed via Pally. Order cancelled.')->render()
+                __('Pally: payment failed. Order placed on hold pending late retries.')->render()
             );
         } else {
             $order->addCommentToStatusHistory(
@@ -291,44 +381,24 @@ class Processor
 
     private function isAmountMatching(Order $order, string $outSum): bool
     {
-        $expected = (float) $order->getGrandTotal();
-        $received = (float) $outSum;
+        // Use bccomp to avoid IEEE-754 rounding error on amounts with fractional
+        // parts (e.g. 199.99 vs. 199.989999 after repeated float arithmetic).
+        // We compare at two decimal places, mirroring bill/create's %.2f formatting.
+        $expected = sprintf('%.2f', (float) $order->getGrandTotal());
+        $received = sprintf('%.2f', (float) $outSum);
 
-        return abs($expected - $received) < 0.01;
+        return bccomp($expected, $received, 2) === 0;
     }
 
-    private function findOrder(string $custom, string $invId): ?Order
+    private function isCurrencyMatching(Order $order, string $currencyIn): bool
     {
-        // Primary lookup by custom (order increment_id)
-        if ($custom !== '') {
-            $order = $this->findOrderByIncrementId($custom);
-            if ($order !== null) {
-                return $order;
-            }
+        $orderCurrency = strtoupper((string) $order->getOrderCurrencyCode());
+        if ($orderCurrency === '') {
+            // Some degenerate test orders have no currency set; don't block them.
+            return true;
         }
 
-        // Fallback: use InvId as order increment_id according to API callback contract.
-        if ($invId !== '') {
-            $order = $this->findOrderByIncrementId($invId);
-            if ($order !== null) {
-                return $order;
-            }
-        }
-
-        return null;
+        return $orderCurrency === $currencyIn;
     }
 
-    private function findOrderByIncrementId(string $incrementId): ?Order
-    {
-        $collection = $this->orderCollectionFactory->create();
-        $collection->addFieldToFilter('increment_id', $incrementId);
-        $collection->setPageSize(1);
-        $order = $collection->getFirstItem();
-
-        if ($order && $order->getId()) {
-            return $order;
-        }
-
-        return null;
-    }
 }

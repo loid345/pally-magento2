@@ -32,7 +32,7 @@
 "Invalid response from payment service. Missing bill_id or link_page_url.","Invalid response from payment service. Missing bill_id or link_page_url."
 "Pally payment status: %1","Pally payment status: %1"
 "Pally payment confirmed. Transaction ID: %1","Pally payment confirmed. Transaction ID: %1"
-"Payment failed via Pally. Order cancelled.","Payment failed via Pally. Order cancelled."
+"Pally: payment failed. Order placed on hold pending late retries.","Pally: payment failed. Order placed on hold pending late retries."
 "Pally: payment underpaid. Order placed on hold for manual review.","Pally: payment underpaid. Order placed on hold for manual review."
 "Order #%1","Order #%1"
 "Payment redirect URL is not available. Please try again.","Payment redirect URL is not available. Please try again."
