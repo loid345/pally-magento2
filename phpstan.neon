@@ -4,6 +4,7 @@ parameters:
   bootstrapFiles:
     - vendor/autoload.php
   paths:
+    - Block
     - Controller
     - Cron
     - Exception
