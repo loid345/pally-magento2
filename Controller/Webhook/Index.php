@@ -107,15 +107,29 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
 
     private function resolveStoreId(string $custom, string $invId): ?int
     {
-        if ($custom !== '') {
-            $order = $this->findOrderByIncrementId($custom);
+        $parsed = Processor::parseCustom($custom);
+
+        // Primary: increment_id scoped by the store_id parsed from `custom`.
+        // Unique in a multi-site install because it never crosses store boundaries.
+        if ($parsed['increment_id'] !== '') {
+            $order = $this->findOrderByIncrementId($parsed['increment_id'], $parsed['store_id']);
             if ($order !== null) {
                 return (int) $order->getStoreId();
             }
         }
 
+        // Legacy fallback for orders placed before store_id was embedded in `custom`.
+        if ($parsed['increment_id'] !== '' && $parsed['store_id'] !== null) {
+            $order = $this->findOrderByIncrementId($parsed['increment_id'], null);
+            if ($order !== null) {
+                return (int) $order->getStoreId();
+            }
+        }
+
+        // Last resort: Pally echoes InvId from our bill_create request, so on
+        // fresh deliveries it mirrors the order increment_id.
         if ($invId !== '') {
-            $order = $this->findOrderByIncrementId($invId);
+            $order = $this->findOrderByIncrementId($invId, null);
             if ($order !== null) {
                 return (int) $order->getStoreId();
             }
@@ -124,10 +138,13 @@ class Index implements HttpPostActionInterface, CsrfAwareActionInterface
         return null;
     }
 
-    private function findOrderByIncrementId(string $incrementId): ?Order
+    private function findOrderByIncrementId(string $incrementId, ?int $storeId): ?Order
     {
         $collection = $this->orderCollectionFactory->create();
         $collection->addFieldToFilter('increment_id', $incrementId);
+        if ($storeId !== null) {
+            $collection->addFieldToFilter('store_id', $storeId);
+        }
         $collection->setPageSize(1);
         $order = $collection->getFirstItem();
 

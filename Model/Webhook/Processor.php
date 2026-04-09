@@ -41,7 +41,8 @@ class Processor
         $trsId = (string) ($webhookData['TrsId'] ?? '');
         $outSum = (string) ($webhookData['OutSum'] ?? '');
 
-        $order = $this->findOrder($custom, $invId);
+        $parsed = self::parseCustom($custom);
+        $order = $this->findOrder($parsed['increment_id'], $parsed['store_id'], $invId);
         if ($order === null) {
             $this->logOrderNotFound($custom, $invId);
             throw new WebhookOrderNotFoundException(
@@ -297,19 +298,31 @@ class Processor
         return abs($expected - $received) < 0.01;
     }
 
-    private function findOrder(string $custom, string $invId): ?Order
+    private function findOrder(string $incrementId, ?int $storeId, string $invId): ?Order
     {
-        // Primary lookup by custom (order increment_id)
-        if ($custom !== '') {
-            $order = $this->findOrderByIncrementId($custom);
+        // Primary lookup: increment_id scoped by store_id parsed from `custom`.
+        // This is the only path that is unique in a multi-site install.
+        if ($incrementId !== '') {
+            $order = $this->findOrderByIncrementId($incrementId, $storeId);
             if ($order !== null) {
                 return $order;
             }
         }
 
-        // Fallback: use InvId as order increment_id according to API callback contract.
+        // Legacy fallback for orders created before the store_id was
+        // embedded in `custom`: global lookup by increment_id.
+        if ($incrementId !== '' && $storeId !== null) {
+            $order = $this->findOrderByIncrementId($incrementId, null);
+            if ($order !== null) {
+                return $order;
+            }
+        }
+
+        // Last-resort fallback: use InvId as the increment_id. Pally
+        // echoes InvId verbatim from our bill_create request, so it
+        // mirrors the order increment_id on fresh deliveries.
         if ($invId !== '') {
-            $order = $this->findOrderByIncrementId($invId);
+            $order = $this->findOrderByIncrementId($invId, null);
             if ($order !== null) {
                 return $order;
             }
@@ -318,10 +331,13 @@ class Processor
         return null;
     }
 
-    private function findOrderByIncrementId(string $incrementId): ?Order
+    private function findOrderByIncrementId(string $incrementId, ?int $storeId): ?Order
     {
         $collection = $this->orderCollectionFactory->create();
         $collection->addFieldToFilter('increment_id', $incrementId);
+        if ($storeId !== null) {
+            $collection->addFieldToFilter('store_id', $storeId);
+        }
         $collection->setPageSize(1);
         $order = $collection->getFirstItem();
 
@@ -330,5 +346,38 @@ class Processor
         }
 
         return null;
+    }
+
+    /**
+     * Split the `custom` field that Pally echoes back in a webhook into
+     * its composite parts. The field is produced by
+     * {@see \Pally\Payment\Gateway\Request\BillCreateDataBuilder} as
+     * `{increment_id}|{store_id}`. Orders that predate that format are
+     * handled transparently by returning a null store id.
+     *
+     * @return array{increment_id: string, store_id: ?int}
+     */
+    public static function parseCustom(string $custom): array
+    {
+        if ($custom === '') {
+            return ['increment_id' => '', 'store_id' => null];
+        }
+
+        $pipePos = strrpos($custom, '|');
+        if ($pipePos === false) {
+            return ['increment_id' => $custom, 'store_id' => null];
+        }
+
+        $incrementId = substr($custom, 0, $pipePos);
+        $storeIdRaw = substr($custom, $pipePos + 1);
+
+        if ($storeIdRaw === '' || !ctype_digit($storeIdRaw)) {
+            return ['increment_id' => $custom, 'store_id' => null];
+        }
+
+        return [
+            'increment_id' => $incrementId,
+            'store_id' => (int) $storeIdRaw,
+        ];
     }
 }
