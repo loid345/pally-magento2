@@ -95,14 +95,11 @@ class PollPendingPayments
             return;
         }
 
-        // Build webhook-like data and process. The `custom` field must
-        // match the composite format produced by BillCreateDataBuilder
-        // so that Processor::parseCustom() routes the lookup to the
-        // correct (increment_id, store_id) pair in multi-site installs.
+        // Build webhook-like data and process
         $webhookData = [
             'InvId' => $order->getIncrementId(),
             'OutSum' => sprintf('%.2f', (float) $order->getGrandTotal()),
-            'custom' => $order->getIncrementId() . '|' . (int) $order->getStoreId(),
+            'custom' => $order->getIncrementId(),
             'Status' => $pallyStatus,
             'TrsId' => $resolvedTrsId,
         ];
