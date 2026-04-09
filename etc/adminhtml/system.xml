@@ -56,6 +56,12 @@
                     <comment>Pally API base URL. Default: https://pal24.pro</comment>
                     <config_path>payment/pally/api_url</config_path>
                 </field>
+                <field id="callback_urls" translate="label comment" type="text" sortOrder="56"
+                       showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Pally Cabinet URLs</label>
+                    <frontend_model>Pally\Payment\Block\Adminhtml\System\Config\CallbackUrls</frontend_model>
+                    <comment>Read-only helper. Copy these URLs into your Pally merchant cabinet.</comment>
+                </field>
                 <field id="bill_type" translate="label comment" type="select" sortOrder="60"
                        showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Bill Type</label>
