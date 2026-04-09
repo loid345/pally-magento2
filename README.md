@@ -23,6 +23,30 @@
 
 Рекомендуется включать **Debug Mode** только на тестовых/диагностических окружениях.
 
+> **Поддерживаемые валюты:** Pally принимает только `RUB`, `USD`, `EUR`.
+> Для магазинов с любой другой валютой Pally будет автоматически скрыт
+> в чекауте (`canUseForCurrency`), а попытка создать счёт через REST/Admin
+> отклонится с ошибкой.
+
+## Настройка в кабинете Pally
+
+В личном кабинете Pally (`https://pally.info`) → **API интеграции** → ваш магазин,
+заполните три URL, заменив `<host>` на домен вашего Magento-магазина:
+
+| Поле в кабинете Pally | URL |
+| --- | --- |
+| **Result URL** (postback) | `https://<host>/pally/webhook/index` |
+| **Success URL** | `https://<host>/pally/callback/success` |
+| **Fail URL** | `https://<host>/pally/callback/fail` |
+
+Без правильно настроенных URL:
+- статус заказа не будет обновляться (Result URL)
+- покупатель не вернётся в магазин после оплаты (Success/Fail URL)
+
+`Result URL` Pally вызывает методом `POST` с подписью `md5(OutSum:InvId:apiToken)`.
+`Success/Fail URL` тоже вызываются `POST`-ом — модуль это поддерживает,
+включая обход CSRF (см. `Controller\Callback\Success::validateForCsrf`).
+
 ## Важно по безопасности
 
 - API token хранится в зашифрованном виде в конфиге Magento.

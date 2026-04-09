@@ -301,6 +301,15 @@ class Processor
             $payment->setIsTransactionPending(false);
         }
 
+        // Late SUCCESS arriving after a FAIL/UNDERPAID that put the order on
+        // hold needs to lift the hold first; Magento refuses to leave HOLDED
+        // via setState() alone. unhold() resets back to the previous state
+        // (typically pending_payment), then the SUCCESS flow promotes to
+        // processing as usual.
+        if ($order->getState() === Order::STATE_HOLDED && $order->canUnhold()) {
+            $order->unhold();
+        }
+
         // Don't create invoice if already exists or can't be invoiced;
         // still persist the transaction flags set above.
         if ($order->hasInvoices() || !$order->canInvoice()) {
@@ -349,10 +358,18 @@ class Processor
 
     private function handleFail(Order $order): void
     {
-        if ($order->canCancel()) {
-            $order->cancel();
+        // Pally retries postbacks up to 5 times (10^n strategy) and a real
+        // payment can land AFTER an initial FAIL — see docs/pally-api.md
+        // "Postback / Retry". If we hard-cancel the order on the first FAIL,
+        // a later SUCCESS cannot recover it (Magento has no native
+        // un-cancel: stock has been returned, gift cards refunded, etc.).
+        // We therefore put the order on hold instead, mirroring UNDERPAID
+        // handling. The merchant can cancel manually, or Magento's built-in
+        // sales_clean_orders cron will auto-cancel stale pending orders.
+        if ($order->canHold()) {
+            $order->hold();
             $order->addCommentToStatusHistory(
-                __('Payment failed via Pally. Order cancelled.')->render()
+                __('Pally: payment failed. Order placed on hold pending late retries.')->render()
             );
         } else {
             $order->addCommentToStatusHistory(
