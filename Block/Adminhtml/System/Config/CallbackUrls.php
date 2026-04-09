@@ -28,6 +28,9 @@ class CallbackUrls extends Field
         parent::__construct($context, $data);
     }
 
+    /**
+     * @SuppressWarnings(PHPMD.UnusedFormalParameter)
+     */
     protected function _getElementHtml(AbstractElement $element): string
     {
         $baseUrl = rtrim((string) $this->resolveStore()->getBaseUrl(), '/');
