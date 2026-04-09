@@ -20,16 +20,17 @@ class PaymentStateMachine
      */
     public function getMagentoState(string $pallyStatus): array
     {
+        // Note: FAIL maps to HOLDED, NOT CANCELED. Pally retries postbacks up
+        // to 5 times and a SUCCESS can arrive after a FAIL; Magento offers no
+        // native "un-cancel" path, so we keep failed orders recoverable on
+        // hold. See Webhook\Processor::handleFail for the rationale.
         return match (strtoupper($pallyStatus)) {
             self::PALLY_STATUS_SUCCESS,
             self::PALLY_STATUS_OVERPAID => [
                 'state' => Order::STATE_PROCESSING,
                 'status' => 'processing',
             ],
-            self::PALLY_STATUS_FAIL => [
-                'state' => Order::STATE_CANCELED,
-                'status' => 'canceled',
-            ],
+            self::PALLY_STATUS_FAIL,
             self::PALLY_STATUS_UNDERPAID => [
                 'state' => Order::STATE_HOLDED,
                 'status' => 'holded',

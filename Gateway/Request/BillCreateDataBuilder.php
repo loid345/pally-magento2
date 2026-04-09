@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Pally\Payment\Gateway\Request;
 
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Payment\Gateway\Helper\SubjectReader;
 use Magento\Payment\Gateway\Request\BuilderInterface;
 use Magento\Store\Model\StoreManagerInterface;
@@ -25,6 +26,14 @@ class BillCreateDataBuilder implements BuilderInterface
     ) {
     }
 
+    /**
+     * @throws LocalizedException when the order currency is not one of the
+     *         three currencies Pally supports. The Magento checkout already
+     *         filters Pally out for unsupported currencies via the
+     *         CurrencyValidator wired into PallyPaymentValidatorPool, so this
+     *         is a defence-in-depth check for off-checkout flows (admin
+     *         orders, REST API, etc.) that bypass canUseForCurrency.
+     */
     public function build(array $buildSubject): array
     {
         $paymentDO = SubjectReader::readPayment($buildSubject);
@@ -35,8 +44,16 @@ class BillCreateDataBuilder implements BuilderInterface
         $baseUrl = rtrim((string) $store->getBaseUrl(), '/');
         $currency = strtoupper((string) $order->getCurrencyCode());
 
+        if (!in_array($currency, self::SUPPORTED_CURRENCIES, true)) {
+            throw new LocalizedException(
+                __('Pally accepts payments in RUB, USD or EUR only. Order currency: %1.', $currency)
+            );
+        }
+
         // Note: `shop_url` is NOT part of the documented bill/create payload;
-        // Pally silently ignores it. The Success/Fail URLs below are enough.
+        // Pally silently ignores it. The Success/Fail/Return URLs below are
+        // enough. `return_url` powers the "Back to shop" button on the Pally
+        // payment form — its host must match the merchant's domain.
         $request = [
             '__store_id' => $storeId,
             'shop_id' => $this->config->getShopId($storeId),
@@ -49,14 +66,9 @@ class BillCreateDataBuilder implements BuilderInterface
             'payer_pays_commission' => '0',
             'success_url' => $baseUrl . '/pally/callback/success',
             'fail_url' => $baseUrl . '/pally/callback/fail',
+            'return_url' => $baseUrl . '/checkout/cart',
+            'currency_in' => $currency,
         ];
-
-        // Only forward currency_in when it is in Pally's supported set;
-        // otherwise skip the field entirely and let Pally fall back to the
-        // merchant's default configured currency to avoid a 422.
-        if (in_array($currency, self::SUPPORTED_CURRENCIES, true)) {
-            $request['currency_in'] = $currency;
-        }
 
         return $request;
     }
