@@ -12,6 +12,7 @@ use Magento\Framework\App\Request\InvalidRequestException;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Controller\Result\RedirectFactory;
 use Magento\Framework\Controller\ResultInterface;
+use Magento\Sales\Model\Order;
 use Pally\Payment\Model\Order\OrderFinder;
 use Pally\Payment\Model\Webhook\SignatureVerifier;
 use Psr\Log\LoggerInterface;
@@ -82,8 +83,7 @@ class Success implements HttpGetActionInterface, HttpPostActionInterface, CsrfAw
                 $this->logger->info('Pally success redirect: order recovered from POST params', [
                     'order' => $order->getIncrementId(),
                 ]);
-                $this->checkoutSession->setLastRealOrderId($order->getIncrementId());
-                $this->checkoutSession->setLastOrderId($order->getId());
+                $this->restoreCheckoutSession($order);
             } else {
                 $this->logger->warning('Pally success redirect: order not found by POST params', [
                     'InvId'  => $invId,
@@ -97,6 +97,30 @@ class Success implements HttpGetActionInterface, HttpPostActionInterface, CsrfAw
         }
 
         return $redirect->setPath('checkout/onepage/success');
+    }
+
+    /**
+     * Restores the minimum checkout session state required by
+     * Magento\Checkout\Model\Session\SuccessValidator so that
+     * checkout/onepage/success can display the order confirmation page.
+     *
+     * SuccessValidator::isValid() checks three session keys:
+     *   - last_success_quote_id   → set via setLastSuccessQuoteId()
+     *   - last_quote_id           → set via setLastQuoteId()
+     *   - last_order_id           → set via setLastOrderId()
+     *
+     * Without all three the success page silently redirects to cart.
+     * We also set last_real_order_id (increment ID) which the success
+     * page block uses to display the order number to the customer.
+     */
+    private function restoreCheckoutSession(Order $order): void
+    {
+        $quoteId = (int) $order->getQuoteId();
+
+        $this->checkoutSession->setLastSuccessQuoteId($quoteId);
+        $this->checkoutSession->setLastQuoteId($quoteId);
+        $this->checkoutSession->setLastOrderId((int) $order->getId());
+        $this->checkoutSession->setLastRealOrderId($order->getIncrementId());
     }
 
     public function createCsrfValidationException(RequestInterface $request): ?InvalidRequestException
