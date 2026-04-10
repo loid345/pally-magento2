@@ -303,9 +303,9 @@ class Processor
         // Late SUCCESS arriving after a FAIL/UNDERPAID that put the order on
         // hold needs to lift the hold first; Magento refuses to leave HOLDED
         // via setState() alone. unhold() resets back to the previous state
-        // (typically pending_payment), then the SUCCESS flow promotes to
-        // processing as usual.
-        if ($order->getState() === Order::STATE_HOLDED && $order->canUnhold()) {
+        // (typically pending_payment), then the SUCCESS flow promotes as usual.
+        // canUnhold() already checks getState() === STATE_HOLDED internally.
+        if ($order->canUnhold()) {
             $order->unhold();
         }
 
