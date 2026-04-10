@@ -313,8 +313,7 @@ class Processor
         // Don't create invoice if already exists or can't be invoiced;
         // still persist the transaction flags set above.
         if ($order->hasInvoices() || !$order->canInvoice()) {
-            $order->setState(Order::STATE_PROCESSING);
-            $order->setStatus('processing');
+            $this->applyPostPaymentState($order);
             $order->addCommentToStatusHistory(
                 __('Pally payment confirmed. Transaction ID: %1', $trsId)->render()
             );
@@ -326,8 +325,7 @@ class Processor
         $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
         $invoice->register();
 
-        $order->setState(Order::STATE_PROCESSING);
-        $order->setStatus('processing');
+        $this->applyPostPaymentState($order);
         $order->addCommentToStatusHistory(
             __('Pally payment confirmed. Transaction ID: %1', $trsId)->render()
         );
@@ -339,6 +337,27 @@ class Processor
         $transaction->addObject($invoice);
         $transaction->addObject($order);
         $transaction->save();
+    }
+
+    /**
+     * Sets the post-payment order state/status.
+     *
+     * For orders that require physical shipment (canShip() = true) the state
+     * is set to processing — the merchant still needs to ship the goods.
+     * For fully virtual/downloadable orders (canShip() = false) there is
+     * nothing to ship, so the order goes straight to complete, which is
+     * consistent with how Magento's native payment methods behave and allows
+     * fulfilment observers (e.g. digital-key delivery) to fire immediately.
+     */
+    private function applyPostPaymentState(Order $order): void
+    {
+        if ($order->canShip()) {
+            $order->setState(Order::STATE_PROCESSING);
+            $order->setStatus('processing');
+        } else {
+            $order->setState(Order::STATE_COMPLETE);
+            $order->setStatus('complete');
+        }
     }
 
     private function handleUnderpaid(Order $order): void
