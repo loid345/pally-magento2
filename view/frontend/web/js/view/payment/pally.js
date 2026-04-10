@@ -43,6 +43,20 @@ define([
         initialize: function () {
             this._super();
 
+            // Pally is a redirect-based payment — it does not need a billing
+            // address to proceed.  The parent component initialises
+            // isPlaceOrderActionAllowed to (quote.billingAddress() != null),
+            // which is false for guest users when the store has address
+            // validation disabled.  Force it to true so the Place Order
+            // button is always enabled when Pally is selected.
+            log('isPlaceOrderActionAllowed() after parent init:', this.isPlaceOrderActionAllowed());
+            log('quote.billingAddress():', JSON.stringify(quote.billingAddress()));
+
+            if (!this.isPlaceOrderActionAllowed()) {
+                log('Forcing isPlaceOrderActionAllowed to true (redirect payment, billing address not required)');
+                this.isPlaceOrderActionAllowed(true);
+            }
+
             if (isDebug()) {
                 var config = window.checkoutConfig.payment.pally;
                 log('=== Component initialized ===');
@@ -57,7 +71,6 @@ define([
                 log('redirectAfterPlaceOrder:', this.redirectAfterPlaceOrder);
 
                 // Track isPlaceOrderActionAllowed changes
-                var self = this;
                 this.isPlaceOrderActionAllowed.subscribe(function (newValue) {
                     log('isPlaceOrderActionAllowed changed to:', newValue);
                     log('  (call stack):', new Error().stack);
