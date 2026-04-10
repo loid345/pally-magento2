@@ -44,20 +44,22 @@ class Success implements HttpGetActionInterface, HttpPostActionInterface, CsrfAw
     {
         $redirect = $this->redirectFactory->create();
 
-        // Defence in depth: if Pally POSTs here with a SignatureValue, verify it
-        // before trusting session-based order lookup. A mismatch is logged and
-        // we still fall through to the cart so the customer sees something sane.
         $invId = (string) $this->request->getParam('InvId', '');
         $outSum = (string) $this->request->getParam('OutSum', '');
         $signatureValue = (string) $this->request->getParam('SignatureValue', '');
 
+        // Defence in depth: log a warning when Pally sends a SignatureValue that
+        // does not match, but do NOT return early. The success_url is only for
+        // redirecting the customer to a friendly page; the authoritative payment
+        // confirmation is the Result URL postback (Controller/Webhook/Index.php).
+        // Blocking here on a misconfigured api_token would wrongly send paying
+        // customers back to the cart.
         if ($signatureValue !== ''
             && !$this->signatureVerifier->isValid($outSum, $invId, $signatureValue)
         ) {
-            $this->logger->warning('Pally success redirect: invalid signature', [
+            $this->logger->warning('Pally success redirect: invalid signature (continuing anyway)', [
                 'InvId' => $invId,
             ]);
-            return $redirect->setPath('checkout/cart');
         }
 
         // Primary: find the order from the Magento checkout session.
@@ -70,11 +72,23 @@ class Success implements HttpGetActionInterface, HttpPostActionInterface, CsrfAw
 
         if (!$order || !$order->getId()) {
             $custom = (string) $this->request->getParam('custom', '');
+            $this->logger->info('Pally success redirect: session order not found, falling back to POST params', [
+                'InvId'  => $invId,
+                'custom' => $custom,
+            ]);
             $order = $this->orderFinder->findByCustomOrInvId($custom, $invId);
 
             if ($order && $order->getId()) {
+                $this->logger->info('Pally success redirect: order recovered from POST params', [
+                    'order' => $order->getIncrementId(),
+                ]);
                 $this->checkoutSession->setLastRealOrderId($order->getIncrementId());
                 $this->checkoutSession->setLastOrderId($order->getId());
+            } else {
+                $this->logger->warning('Pally success redirect: order not found by POST params', [
+                    'InvId'  => $invId,
+                    'custom' => $custom,
+                ]);
             }
         }
 
