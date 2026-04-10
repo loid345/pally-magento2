@@ -20,7 +20,7 @@
                                                                     <item name="component" xsi:type="string">Pally_Payment/js/view/payment/pally-methods</item>
                                                                     <item name="methods" xsi:type="array">
                                                                         <item name="pally" xsi:type="array">
-                                                                            <item name="isBillingAddressRequired" xsi:type="boolean">true</item>
+                                                                            <item name="isBillingAddressRequired" xsi:type="boolean">false</item>
                                                                         </item>
                                                                     </item>
                                                                 </item>
