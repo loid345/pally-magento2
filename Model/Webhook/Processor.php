@@ -267,13 +267,12 @@ class Processor
         }
 
         // Empty or unknown status: persist metadata only, do not touch order state.
-        if ($pallyStatus === ''
-            || !in_array(
-                $pallyStatus,
-                [PaymentStateMachine::PALLY_STATUS_NEW, PaymentStateMachine::PALLY_STATUS_PROCESS],
-                true
-            )
-        ) {
+        // Note: empty string is not in [NEW, PROCESS] so no separate '' check needed.
+        if (!in_array(
+            $pallyStatus,
+            [PaymentStateMachine::PALLY_STATUS_NEW, PaymentStateMachine::PALLY_STATUS_PROCESS],
+            true
+        )) {
             $this->orderRepository->save($order);
             return;
         }
