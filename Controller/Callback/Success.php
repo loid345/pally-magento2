@@ -12,6 +12,7 @@ use Magento\Framework\App\Request\InvalidRequestException;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Controller\Result\RedirectFactory;
 use Magento\Framework\Controller\ResultInterface;
+use Pally\Payment\Model\Order\OrderFinder;
 use Pally\Payment\Model\Webhook\SignatureVerifier;
 use Psr\Log\LoggerInterface;
 
@@ -34,6 +35,7 @@ class Success implements HttpGetActionInterface, HttpPostActionInterface, CsrfAw
         private readonly RedirectFactory $redirectFactory,
         private readonly RequestInterface $request,
         private readonly SignatureVerifier $signatureVerifier,
+        private readonly OrderFinder $orderFinder,
         private readonly LoggerInterface $logger
     ) {
     }
@@ -58,7 +60,24 @@ class Success implements HttpGetActionInterface, HttpPostActionInterface, CsrfAw
             return $redirect->setPath('checkout/cart');
         }
 
+        // Primary: find the order from the Magento checkout session.
+        // Fallback: Pally sends `custom` (= order increment_id) and `InvId`
+        // in the POST body. When the session is lost after a cross-site POST
+        // redirect (SameSite=Lax cookies are not sent on cross-origin POST),
+        // we recover the order directly from those params and restore the
+        // minimum session state needed by checkout/onepage/success.
         $order = $this->checkoutSession->getLastRealOrder();
+
+        if (!$order || !$order->getId()) {
+            $custom = (string) $this->request->getParam('custom', '');
+            $order = $this->orderFinder->findByCustomOrInvId($custom, $invId);
+
+            if ($order && $order->getId()) {
+                $this->checkoutSession->setLastRealOrderId($order->getIncrementId());
+                $this->checkoutSession->setLastOrderId($order->getId());
+            }
+        }
+
         if (!$order || !$order->getId()) {
             return $redirect->setPath('checkout/cart');
         }
