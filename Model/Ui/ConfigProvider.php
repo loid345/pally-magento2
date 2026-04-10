@@ -35,6 +35,7 @@ class ConfigProvider implements ConfigProviderInterface
                     'description' => $this->config->getDescription($storeId),
                     'instructions' => $this->config->getInstructions($storeId),
                     'redirectUrl' => $this->urlBuilder->getUrl('pally/redirect/start'),
+                    'isDebugMode' => $this->config->isDebugMode($storeId),
                 ],
             ],
         ];
