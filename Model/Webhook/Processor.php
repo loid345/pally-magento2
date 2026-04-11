@@ -43,7 +43,10 @@ class Processor
 
         $order = $this->orderFinder->findByCustomOrInvId($custom, $invId);
         if ($order === null) {
-            $this->logOrderNotFound($custom, $invId);
+            $this->logger->warning('Pally webhook: order not found', [
+                'custom' => $custom,
+                'InvId'  => $invId,
+            ]);
             throw new WebhookOrderNotFoundException(
                 sprintf('Pally webhook: order not found (custom=%s, InvId=%s)', $custom, $invId)
             );
@@ -155,14 +158,6 @@ class Processor
         }
 
         return false;
-    }
-
-    private function logOrderNotFound(string $custom, string $invId): void
-    {
-        $this->logger->warning('Pally webhook: order not found', [
-            'custom' => $custom,
-            'InvId' => $invId,
-        ]);
     }
 
     private function isDuplicateFinalEvent(Order $order, Payment $payment, string $newStatus): bool
