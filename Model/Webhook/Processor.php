@@ -228,11 +228,7 @@ class Processor
         string $trsId
     ): void {
         $payment->setAdditionalInformation('pally_status', $pallyStatus);
-
-        if ($trsId !== '') {
-            $payment->setAdditionalInformation('pally_trs_id', $trsId);
-        }
-
+        $this->setAdditionalInformationIfNotEmpty($payment, 'pally_trs_id', $trsId);
         $this->setAdditionalInformationIfNotEmpty($payment, 'pally_account_type', $webhookData['AccountType'] ?? '');
         $this->setAdditionalInformationIfNotEmpty($payment, 'pally_out_sum', $webhookData['OutSum'] ?? '');
         $this->setAdditionalInformationIfNotEmpty($payment, 'pally_commission', $webhookData['Commission'] ?? '');
