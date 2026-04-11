@@ -22,7 +22,13 @@ class BillCreateHandler implements HandlerInterface
         }
 
         $payment->setAdditionalInformation('pally_status', 'NEW');
-        $payment->setIsTransactionPending(true);
+        // Do NOT set setIsTransactionPending(true) here — that would move
+        // the order into STATE_PAYMENT_REVIEW, which blocks canInvoice() and
+        // prevents the webhook handler from creating an invoice. For a
+        // redirect-based payment the order should sit in STATE_PENDING_PAYMENT
+        // (configured via order_status in config.xml) until the SUCCESS webhook
+        // arrives.
+        $payment->setIsTransactionPending(false);
         $payment->setIsTransactionClosed(false);
     }
 }
