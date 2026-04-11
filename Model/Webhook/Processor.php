@@ -10,6 +10,8 @@ use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Payment;
+use Magento\Sales\Model\Order\Payment\Transaction as PaymentTransaction;
+use Magento\Sales\Model\Order\Payment\Transaction\BuilderInterface as TransactionBuilderInterface;
 use Magento\Sales\Model\Service\InvoiceService;
 use Pally\Payment\Exception\WebhookLockException;
 use Pally\Payment\Exception\WebhookOrderNotFoundException;
@@ -27,6 +29,7 @@ class Processor
         private readonly OrderRepositoryInterface $orderRepository,
         private readonly InvoiceService $invoiceService,
         private readonly TransactionFactory $transactionFactory,
+        private readonly TransactionBuilderInterface $transactionBuilder,
         private readonly PaymentStateMachine $stateMachine,
         private readonly LockManagerInterface $lockManager,
         private readonly LoggerInterface $logger
@@ -240,7 +243,7 @@ class Processor
         string $key,
         mixed $value
     ): void {
-        if ($value === '' || $value === null) {
+        if (in_array($value, ['', null], true)) {
             return;
         }
 
@@ -291,10 +294,18 @@ class Processor
 
     private function handleSuccess(Order $order, string $trsId): void
     {
+        $captureTransaction = null;
         $payment = $order->getPayment();
         if ($payment !== null) {
             if ($trsId !== '') {
                 $payment->setTransactionId($trsId);
+                $captureTransaction = $this->transactionBuilder
+                    ->setPayment($payment)
+                    ->setOrder($order)
+                    ->setTransactionId($trsId)
+                    ->setFailSafe(true)
+                    ->build(PaymentTransaction::TYPE_CAPTURE);
+                $captureTransaction->setIsClosed(true);
             }
             $payment->setIsTransactionClosed(true);
             $payment->setIsTransactionPending(false);
@@ -325,7 +336,12 @@ class Processor
             $order->addCommentToStatusHistory(
                 __('Pally payment confirmed. Transaction ID: %1', $trsId)->render()
             );
-            $this->orderRepository->save($order);
+            $dbTxn = $this->transactionFactory->create();
+            $dbTxn->addObject($order);
+            if ($captureTransaction !== null) {
+                $dbTxn->addObject($captureTransaction);
+            }
+            $dbTxn->save();
             return;
         }
 
@@ -338,13 +354,16 @@ class Processor
             __('Pally payment confirmed. Transaction ID: %1', $trsId)->render()
         );
 
-        // Save invoice + order atomically using a fresh Transaction per call;
-        // sharing a single injected Transaction instance across webhook calls
-        // would accumulate stale objects.
-        $transaction = $this->transactionFactory->create();
-        $transaction->addObject($invoice);
-        $transaction->addObject($order);
-        $transaction->save();
+        // Save invoice + order + capture transaction atomically using a fresh
+        // Transaction per call; sharing a single injected Transaction instance
+        // across webhook calls would accumulate stale objects.
+        $dbTxn = $this->transactionFactory->create();
+        $dbTxn->addObject($invoice);
+        $dbTxn->addObject($order);
+        if ($captureTransaction !== null) {
+            $dbTxn->addObject($captureTransaction);
+        }
+        $dbTxn->save();
     }
 
     /**
