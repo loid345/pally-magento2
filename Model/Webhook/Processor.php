@@ -309,6 +309,15 @@ class Processor
             $order->unhold();
         }
 
+        // STATE_PAYMENT_REVIEW blocks canInvoice(). Orders may land there if
+        // BillCreateHandler previously set setIsTransactionPending(true). Transition
+        // out of that state before the canInvoice() check so existing orders
+        // placed before the BillCreateHandler fix can still be invoiced.
+        if ($order->getState() === Order::STATE_PAYMENT_REVIEW) {
+            $order->setState(Order::STATE_PENDING_PAYMENT);
+            $order->setStatus('pending_payment');
+        }
+
         // Don't create invoice if already exists or can't be invoiced;
         // still persist the transaction flags set above.
         if ($order->hasInvoices() || !$order->canInvoice()) {
